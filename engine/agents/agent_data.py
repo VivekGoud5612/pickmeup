@@ -2,22 +2,22 @@ from .data import CombatStats
 from dataclasses import dataclass
 
 @dataclass
-class AgentIdentity:
+class AgentIdentityFormat:
     id : int
     pos : tuple[int, int]
     role: str
     stats : CombatStats
 
-class AgentIdentityCreation:
+class AgentIdentity:
     def create_identity(self, agent_id : int, role: str = None):  ## For now , later we use this to create diverse agent identities and base agent takes that and 
-                                                             ## the rule based or LLM agent with some sort of identity
+         ## the rule based or LLM agent with some sort of identity
         
         _data = _get_data(role)
-        return AgentIdentity(
+        return AgentIdentityFormat(
             id = agent_id,
             pos = _data['pos'],
             role = role,
-            stats = CombatStats(hp = _data['hp'], attack = _data['attack'], min_range = _data['min_range'], max_range = _data['max_range'] )
+            combat_stats = CombatStats(hp = _data['hp'], attack = _data['attack'], min_range = _data['min_range'], max_range = _data['max_range'] )
         )
     
     @staticmethod
