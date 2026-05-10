@@ -2,11 +2,11 @@ class Grid:
     def __init__(self, size: int):
         self.size = size
 
-    def _is_valid_position(self, pos:Tuple(int, int)):
+    def _is_valid_position(self, pos:tuple[int, int]):
         x,y = pos
-        return 0 <= self.size and 0 <= self.y
+        return 0 <= x < self.size and 0 <= y < self.size
 
-    def _get_new_position(self, pos : Tuple(int, int), action : str):
+    def _get_new_position(self, pos : tuple[int, int], action : str):
         x,y = pos 
 
         if action == 'UP':
@@ -20,10 +20,10 @@ class Grid:
         
         return pos
 
-    def move(self, pos : Tuple(int, int) : action: str):
+    def move(self, pos : tuple[int, int] , action: str):
         x,y = pos
 
-        new_pos = self._get_new_positions(pos, action)
+        new_pos = self._get_new_position(pos, action)
 
         if self._is_valid_position(new_pos):
             return new_pos 
