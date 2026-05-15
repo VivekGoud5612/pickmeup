@@ -1,15 +1,24 @@
-from  engine.environment.state import GameState
+from agent_data import AgentIdentity
+from PPO.agent import Agent
 
-class BaseAgent: ###base of all agents
-    def __init__(self, agent_id : int):
-        self.id = agent_id
+class BaseAgent:
+    def __init__(self,agent_id :int ,role :str):
+        identity_factory=AgentIdentity()
+        self.identity=identity_factory.create_identity(agent_id,role)
 
-    def act(self, state : GameState):
-        raise NotImplementedError
+        self.id=self.identity.id
+        self.role=self.identity.role
+        self.pos=list(self.identity.pos)
+        self.stats=self.identity.stats
+        self.action_space_size=self.identity.action_space_size
 
-if __name__ == '__main__':
-    agent_id = 1
-    agent = {}
-    bd = BaseAgent(agent_id)
-    state = GameState(agent)
-    bd.act(state)
+        self.policy=Agent(18,self.action_space_size,self.id,self.role)
+
+
+    def get_action(self,observation,action_mask,is_training):
+        if self.policy is not None:
+            action=self.policy.action(observation,action_mask,is_training)
+
+        else:
+            action=4
+        return action
