@@ -17,12 +17,21 @@ class ActionHandler:
         if action==3:
             gamestate.positions[agent_id]=(x+1,y)
 
-        return True
+        team_name = gamestate.teams[agent_id]
+        new_pos = gamestate.positions[agent_id]
+        
+        # Check if the TILE is new to the ENTIRE TEAM
+        is_new_tile = new_pos not in gamestate.team_visited_tiles[team_name]
+        if is_new_tile:
+            gamestate.team_visited_tiles[team_name].add(new_pos)
+            
+        return is_new_tile
+
     
     @staticmethod
     def _execute_combat(agent_id:int,action:int,gamestate:GameState)->Dict[str,Any]:
         
-        result = {"damage_dealt": 0, "healed": 0, "blocked": False ,"target_id":None}
+        result = {"damage_dealt": 0, "healed": 0, "blocked": False ,"target_id":None ,"target_hp_ratio_before":None}
 
         identity=gamestate.identities[agent_id]
         role=identity.role
@@ -36,7 +45,7 @@ class ActionHandler:
 
         gamestate.is_blocking[agent_id]=False
 
-        enemies=gamestate.get_enemies[agent_id]
+        enemies=gamestate.get_enemies(agent_id)
 
         if role in ["Tank","Dealer"]:
             if skill_name in ["basic_attack","special"] and enemies:
@@ -70,6 +79,7 @@ class ActionHandler:
                 if lowest_hp_ally is not None:
                     result["target_id"] = lowest_hp_ally
                     max_hp=gamestate.identities[lowest_hp_ally].stats.max_hp
+                    result["target_hp_ratio_before"]=lowest_hp/max_hp
                     gamestate.hp[lowest_hp_ally]=min(max_hp,lowest_hp-skill.power)
                     result["healed"]=abs(skill.power)
             
@@ -87,7 +97,7 @@ class ActionHandler:
         elif role=="Boss":
             alive_heros=enemies
 
-            if skill_name=="basic attack":
+            if skill_name=="basic_attack":
                 closest_hero=None
                 min_dist=float('inf')
 
@@ -99,7 +109,9 @@ class ActionHandler:
                             closest_hero =h_id
 
                 if closest_hero is not None:
+                    max_hp = gamestate.identities[closest_hero].stats.max_hp
                     result["target_id"] = closest_hero
+                    result["target_hp_ratio_before"]=gamestate.hp[closest_hero]/max_hp
                     actual_damage=skill.power
                     if gamestate.identities[closest_hero].role=="Tank" and gamestate.is_blocking.get(closest_hero,False):
                         actual_damage=actual_damage/2
@@ -112,7 +124,7 @@ class ActionHandler:
 
                 for h_id in alive_heros:
                     dist=gamestate.distance(h_id,agent_id)
-                    if skill.min_range<dist<skill.max_range:
+                    if skill.min_range<=dist<=skill.max_range:
                         actual_damage=skill.power
                         if gamestate.identities[h_id].role == "Tank" and gamestate.is_blocking.get(h_id, False):
                             actual_damage=actual_damage/2

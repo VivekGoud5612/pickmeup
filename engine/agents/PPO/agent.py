@@ -109,7 +109,7 @@ class Agent:
             surr2=torch.clamp(ratios,1-eps_clip,1+eps_clip)*advantages
 
             loss_clip=-torch.min(surr1,surr2).mean()
-            loss_vf=F.mse_loss(curr_values.squeeze(),returns)
+            loss_vf=F.mse_loss(curr_values.squeeze(-1),returns)
             loss_e=-entropy.mean()
 
             final_loss=loss_clip + (c1*loss_vf) + (self.c2*loss_e)
@@ -125,6 +125,9 @@ class Agent:
     def clear_memory(self):
         for key in self.memory:
             self.memory[key].clear()
+
+    def save(self, path):
+        torch.save(self.policy.state_dict(), path)
 
 
 

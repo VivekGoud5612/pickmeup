@@ -17,7 +17,7 @@ class BaseAgent:
 
     def get_action(self,observation,action_mask,is_training):
         if self.policy is not None:
-            action=self.policy.action(observation,action_mask,is_training)
+            action=self.policy.get_action(observation,action_mask,is_training)
 
         else:
             action=4
