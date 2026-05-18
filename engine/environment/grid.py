@@ -33,19 +33,19 @@ class Grid:
                 role = gamestate.identities[agent_id].role
                 color = self.colours.get(role, (255, 255, 255))
             
-            center_x = int(pos[0] * self.cell_size + self.cell_size / 2)
-            center_y = int(pos[1] * self.cell_size + self.cell_size / 2)
+                center_x = int(pos[0] * self.cell_size + self.cell_size / 2)
+                center_y = int(pos[1] * self.cell_size + self.cell_size / 2)
 
-            pygame.draw.circle(self.screen, color, (center_x, center_y), self.cell_size // 3)
+                pygame.draw.circle(self.screen, color, (center_x, center_y), self.cell_size // 3)
 
-            text = self.font.render(role[0], True, (0, 0, 0))
-            self.screen.blit(text, (center_x - 6, center_y - 8))
+                text = self.font.render(role[0], True, (0, 0, 0))
+                self.screen.blit(text, (center_x - 6, center_y - 8))
 
-            hp_ratio = gamestate.hp[agent_id] / gamestate.identities[agent_id].stats.max_hp
+                hp_ratio = gamestate.hp[agent_id] / gamestate.identities[agent_id].stats.max_hp
 
-            bar_width = self.cell_size * 0.8
-            bar_rect = pygame.Rect(center_x - bar_width/2, center_y - self.cell_size/2 + 5, bar_width * hp_ratio, 6)
-            pygame.draw.rect(self.screen, (0, 255, 0) if hp_ratio > 0.4 else (255, 0, 0), bar_rect)
+                bar_width = self.cell_size * 0.8
+                bar_rect = pygame.Rect(center_x - bar_width/2, center_y - self.cell_size/2 + 5, bar_width * hp_ratio, 6)
+                pygame.draw.rect(self.screen, (0, 255, 0) if hp_ratio > 0.4 else (255, 0, 0), bar_rect)
 
         pygame.display.flip()
 

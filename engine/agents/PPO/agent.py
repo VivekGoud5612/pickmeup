@@ -4,7 +4,7 @@ import torch.optim as optim
 from torch.distributions import Categorical
 import numpy as np
 from typing import List
-from model import Actor_Critic
+from .model import Actor_Critic
 
 lr=3e-4
 gamma=0.99

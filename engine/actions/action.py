@@ -1,4 +1,4 @@
-from engine.environment import GameState
+from engine.environment.state import GameState
 from typing import Dict,List,Any
 
 class ActionHandler:
@@ -38,6 +38,8 @@ class ActionHandler:
 
         skill_idx = action - 5
         skill_names = list(identity.stats.skills.keys())
+        
+
         skill_name = skill_names[skill_idx]
         skill = identity.stats.skills[skill_name]
 
@@ -49,9 +51,18 @@ class ActionHandler:
 
         if role in ["Tank","Dealer"]:
             if skill_name in ["basic_attack","special"] and enemies:
-                boss_id=enemies[0]
-                gamestate.hp[boss_id]-=skill.power
-                result["damage_dealt"] = skill.power
+                valid_targets = [
+                    enemy_id for enemy_id in enemies
+                    if skill.min_range <= gamestate.distance(agent_id, enemy_id) <= skill.max_range
+                ]
+                if valid_targets:
+                    boss_id=valid_targets[0]
+                    before_hp = gamestate.hp[boss_id]
+                    max_hp = gamestate.identities[boss_id].stats.max_hp
+                    result["target_id"] = boss_id
+                    result["target_hp_ratio_before"] = max(0.0, before_hp / max_hp)
+                    gamestate.hp[boss_id]=max(0, before_hp - skill.power)
+                    result["damage_dealt"] = before_hp - gamestate.hp[boss_id]
             
             elif skill_name=="block":
                 gamestate.is_blocking[agent_id] = True 
@@ -80,8 +91,9 @@ class ActionHandler:
                     result["target_id"] = lowest_hp_ally
                     max_hp=gamestate.identities[lowest_hp_ally].stats.max_hp
                     result["target_hp_ratio_before"]=lowest_hp/max_hp
-                    gamestate.hp[lowest_hp_ally]=min(max_hp,lowest_hp-skill.power)
-                    result["healed"]=abs(skill.power)
+                    before_hp = gamestate.hp[lowest_hp_ally]
+                    gamestate.hp[lowest_hp_ally]=min(max_hp,before_hp-skill.power)
+                    result["healed"]=gamestate.hp[lowest_hp_ally] - before_hp
             
             elif skill_name=="all_heal":
                 total_healed=0
@@ -90,8 +102,9 @@ class ActionHandler:
                     dist=gamestate.distance(agent_id,a_id)
                     if skill.min_range <= dist <= skill.max_range:
                         max_hp=gamestate.identities[a_id].stats.max_hp
-                        gamestate.hp[a_id]=min(max_hp,gamestate.hp[a_id]-skill.power)
-                        total_healed+=abs(skill.power)
+                        before_hp = gamestate.hp[a_id]
+                        gamestate.hp[a_id]=min(max_hp,before_hp-skill.power)
+                        total_healed+=gamestate.hp[a_id] - before_hp
                 result["healed"]=total_healed
 
         elif role=="Boss":
@@ -116,8 +129,9 @@ class ActionHandler:
                     if gamestate.identities[closest_hero].role=="Tank" and gamestate.is_blocking.get(closest_hero,False):
                         actual_damage=actual_damage/2
                     
-                    gamestate.hp[closest_hero]-=actual_damage
-                    result["damage_dealt"]=actual_damage
+                    before_hp = gamestate.hp[closest_hero]
+                    gamestate.hp[closest_hero]=max(0, before_hp - actual_damage)
+                    result["damage_dealt"]=before_hp - gamestate.hp[closest_hero]
 
             elif skill_name=="aoe":
                 total_damage=0
@@ -129,8 +143,9 @@ class ActionHandler:
                         if gamestate.identities[h_id].role == "Tank" and gamestate.is_blocking.get(h_id, False):
                             actual_damage=actual_damage/2
 
-                        gamestate.hp[h_id]-=actual_damage
-                        total_damage+=actual_damage
+                        before_hp = gamestate.hp[h_id]
+                        gamestate.hp[h_id]=max(0, before_hp - actual_damage)
+                        total_damage+=before_hp - gamestate.hp[h_id]
                 result["damage_dealt"]=total_damage
         
         return result
@@ -142,8 +157,16 @@ class ActionHandler:
             "action_type": None, 
             "moved": False, 
             "skipped": False, 
+            "invalid": False,
             "combat_stats": None
         }
+
+        mask = gamestate.get_action_mask(agent_id)
+        if action < 0 or action >= len(mask) or mask[action] == 0:
+            summary["action_type"] = "invalid"
+            summary["skipped"] = True
+            summary["invalid"] = True
+            return summary
 
         if action in [0, 1, 2, 3]:
             summary["action_type"] = "move"

@@ -21,7 +21,7 @@ class GameState:
         self.positions[agent_id] = identity.pos
         self.hp[agent_id] = identity.stats.max_hp
         self.teams[agent_id] = team
-        self.cooldowns[agent_id] = [0, 0]
+        self.cooldowns[agent_id] = [0 for _ in identity.stats.skills]
         self.is_blocking[agent_id] = False
         
         # --- NEW: Record starting positions in the shared map ---
@@ -49,6 +49,10 @@ class GameState:
         alive_team = {self.teams[uid] for uid in self.hp if self.is_alive(uid)}
         return len(alive_team) <= 1
     
+    def _hp_ratio(self, agent_id: int) -> float:
+        ident = self.identities[agent_id]
+        return max(0.0, min(1.0, self.hp[agent_id] / ident.stats.max_hp))
+
     def get_action_mask(self, agent_id:int) -> List[int]:
         mask = [1, 1, 1, 1, 1, 1, 1]
         ax, ay = self.positions[agent_id]
@@ -60,21 +64,33 @@ class GameState:
         if ax == 0 or [ax - 1, ay] in occupied: mask[2] = 0
         if ax == self.grid_size - 1 or [ax + 1, ay] in occupied: mask[3] = 0
 
+        skills = list(self.identities[agent_id].stats.skills.items())
+        cds = self.cooldowns.get(agent_id, [0 for _ in skills])
+        my_team = self.teams[agent_id]
         enemies = self.get_enemies(agent_id)
-        if not enemies:
-            mask[5:] = [0, 0]
-            return mask
+        allies = [
+            uid for uid, team in self.teams.items()
+            if team == my_team and self.is_alive(uid)
+        ]
 
-        skills = list(self.identities[agent_id].stats.skills.values())
-        cds = self.cooldowns.get(agent_id, [0, 0])
-
-        for i in range(len(skills)):
+        for i, (skill_name, skill) in enumerate(skills):
             if cds[i] > 0:
                 mask[i + 5] = 0
                 continue
 
-            in_range = any(skills[i].min_range <= self.distance(agent_id, e_id) <= skills[i].max_range
-                           for e_id in enemies)
+            if skill_name in ["heal", "all_heal"]:
+                in_range = any(
+                    skill.min_range <= self.distance(agent_id, ally_id) <= skill.max_range
+                    and self.hp[ally_id] < self.identities[ally_id].stats.max_hp
+                    for ally_id in allies
+                )
+            elif skill_name == "block":
+                in_range = True
+            else:
+                in_range = any(
+                    skill.min_range <= self.distance(agent_id, e_id) <= skill.max_range
+                    for e_id in enemies
+                )
             
             if not in_range:
                 mask[i + 5] = 0
@@ -90,7 +106,7 @@ class GameState:
                 ident = self.identities[uid]
                 pos = self.positions[uid]
                 cds = self.cooldowns.get(uid, [0, 0])
-                obs[idx]   = self.hp[uid] / ident.stats.max_hp
+                obs[idx]   = self._hp_ratio(uid)
                 obs[idx+1] = pos[0] / self.grid_size
                 obs[idx+2] = pos[1] / self.grid_size
                 obs[idx+3] = 1.0 if cds[0] == 0 else 0.0
@@ -119,7 +135,7 @@ class GameState:
 
         if boss_is_visible:
             # Boss is spotted by the team! Share real statistics
-            obs[15] = self.hp[boss_id] / self.identities[boss_id].stats.max_hp
+            obs[15] = self._hp_ratio(boss_id)
             obs[16] = self.positions[boss_id][0] / self.grid_size
             obs[17] = self.positions[boss_id][1] / self.grid_size
         else:
@@ -137,7 +153,7 @@ class GameState:
         pos = self.positions[boss_id]
         cds = self.cooldowns.get(boss_id, [0, 0])
 
-        obs[0] = self.hp[boss_id] / ident.stats.max_hp
+        obs[0] = self._hp_ratio(boss_id)
         obs[1] = pos[0] / self.grid_size
         obs[2] = pos[1] / self.grid_size
         obs[3] = 1.0 if cds[0] == 0 else 0.0
@@ -152,7 +168,7 @@ class GameState:
             if self.is_alive(h_id) and self.distance(boss_id, h_id) <= VISION_RANGE:
                 h_ident = self.identities[h_id]
                 h_pos = self.positions[h_id]
-                obs[start_idx]   = self.hp[h_id] / h_ident.stats.max_hp
+                obs[start_idx]   = self._hp_ratio(h_id)
                 obs[start_idx+1] = h_pos[0] / self.grid_size
                 obs[start_idx+2] = h_pos[1] / self.grid_size
             else:

@@ -1,12 +1,11 @@
-from .grid import Grid 
 from .state import GameState 
 from typing import List, Dict, Any
-from actions.action import ActionHandler
-from agents.base_agent import BaseAgent
+from engine.actions.action import ActionHandler
+from engine.agents.base_agent import BaseAgent
 
 class RaidEnv:
-    def __init__(self,):
-        self.grid = Grid(size = 10) 
+    def __init__(self, grid_size: int = 10):
+        self.grid_size = grid_size
         self.gamestate=None
         self.agents = {
             0: BaseAgent(0, "Tank"),
@@ -19,7 +18,7 @@ class RaidEnv:
         self.boss_id=3
 
     def reset(self):
-        self.gamestate = GameState(self.grid)
+        self.gamestate = GameState(self.grid_size)
 
         for agent_id,agent in self.agents.items():
             team="Boss" if agent.role=="Boss" else "Heroes"
@@ -135,7 +134,7 @@ class RaidEnv:
         if summary.get("action_type") == "move" and summary.get("moved") is True:
             reward += 0.02
 
-        combat=summary.get("combat_stats",{})
+        combat=summary.get("combat_stats") or{}
         target_id=combat.get("target_id")
 
         if role!="Boss" and combat.get("damage_dealt",0)>0:

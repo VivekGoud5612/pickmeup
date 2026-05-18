@@ -2,21 +2,20 @@ import os
 import time
 import numpy as np
 from collections import deque
-from env import RaidEnv
-from grid import Grid 
+from engine.environment.env import RaidEnv
 
 def train():
     print("Initializing Advanced Raid MARL Environment...")
     env = RaidEnv()
-    vis = Grid(grid_size=10)
+    vis = None
     
     # --- HYPERPARAMETERS ---
     MAX_EPISODES = 25000
     PPO_UPDATE_THRESHOLD = 2048   # Standard PPO batch size
-    RENDER_INTERVAL = 1000        # Turn on Pygame every 1000 games
+    RENDER_INTERVAL = 1000     # Turn on Pygame every 1000 games
     LOG_INTERVAL = 100            # Print console stats every 100 games
     SAVE_INTERVAL = 5000          # Save weights every 5000 games
-    MAX_ROUNDS = 100              # Prevent infinite games (kiting forever)
+    MAX_ROUNDS = 150              # Prevent infinite games (kiting forever)
     
     # --- TRACKING METRICS ---
     global_steps = 0
@@ -36,6 +35,9 @@ def train():
         
         render_this_episode = (episode % RENDER_INTERVAL == 0)
         if render_this_episode:
+            if vis is None:
+                from engine.environment.grid import Grid
+                vis = Grid(grid_size=10)
             print(f"\n>>> RENDERING EVALUATION EPISODE {episode} <<<")
 
         # --- THE MATCH LOOP ---
@@ -53,7 +55,7 @@ def train():
             # 3. Pygame Rendering (Slowed down slightly for human viewing)
             if render_this_episode:
                 vis.render(env.gamestate)
-                time.sleep(0.1) 
+                time.sleep(0.5) 
 
         # --- END OF MATCH PROCESSING ---
         # Determine who won
@@ -69,14 +71,24 @@ def train():
         for agent_id, reward in episode_rewards.items():
             recent_rewards[agent_id].append(reward)
 
-        # --- PPO NETWORK UPDATE ---
+        
+# --- PPO NETWORK UPDATE ---
         # Only trigger backpropagation if we have enough experiences gathered
-        if global_steps >= PPO_UPDATE_THRESHOLD:
-            for agent_id, agent in env.agents.items():
-                if len(agent.policy.memory["states"]) > 0:
+        #and alternate between heros and bosses learning
+
+        hero_can_learn=(episode//1000)%2==0
+        for agent_id,agent in env.agents.items():
+            current_memory_size=len(agent.policy.memory["states"])
+
+            is_hero = agent_id in [0, 1, 2]
+            can_learn = (is_hero and hero_can_learn) or (not is_hero and not hero_can_learn)
+
+            if current_memory_size >= PPO_UPDATE_THRESHOLD:
+                if can_learn:
+                    print(f"[Training] Triggering PPO update for {agent_id} (Memory: {current_memory_size})")
                     agent.policy.learn()
-                agent.policy.clear_memory()
-            global_steps = 0 # Reset counter after training
+                else:
+                    agent.policy.clear_memory()
 
         # --- CONSOLE LOGGING ---
         if episode % LOG_INTERVAL == 0:
