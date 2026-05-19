@@ -81,7 +81,6 @@ class GameState:
             if skill_name in ["heal", "all_heal"]:
                 in_range = any(
                     skill.min_range <= self.distance(agent_id, ally_id) <= skill.max_range
-                    and self.hp[ally_id] < self.identities[ally_id].stats.max_hp
                     for ally_id in allies
                 )
             elif skill_name == "block":

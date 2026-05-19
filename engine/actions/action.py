@@ -91,9 +91,8 @@ class ActionHandler:
                     result["target_id"] = lowest_hp_ally
                     max_hp=gamestate.identities[lowest_hp_ally].stats.max_hp
                     result["target_hp_ratio_before"]=lowest_hp/max_hp
-                    before_hp = gamestate.hp[lowest_hp_ally]
-                    gamestate.hp[lowest_hp_ally]=min(max_hp,before_hp-skill.power)
-                    result["healed"]=gamestate.hp[lowest_hp_ally] - before_hp
+                    gamestate.hp[lowest_hp_ally]=min(max_hp,lowest_hp-skill.power)
+                    result["healed"]=gamestate.hp[lowest_hp_ally] - lowest_hp
             
             elif skill_name=="all_heal":
                 total_healed=0
