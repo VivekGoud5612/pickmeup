@@ -4,14 +4,14 @@ from engine.actions.action import ActionHandler
 from engine.agents.base_agent import BaseAgent
 
 class RaidEnv:
-    def __init__(self, grid_size: int = 10):
+    def __init__(self, grid_size: int = 20):
         self.grid_size = grid_size
         self.gamestate=None
         self.agents = {
-            0: BaseAgent(0, "Tank"),
-            1: BaseAgent(1, "Dealer"),
-            2: BaseAgent(2, "Healer"),
-            3: BaseAgent(3, "Boss")
+            0: BaseAgent(0, "Tank",self.grid_size),
+            1: BaseAgent(1, "Dealer",self.grid_size),
+            2: BaseAgent(2, "Healer",self.grid_size),
+            3: BaseAgent(3, "Boss",self.grid_size)
         }
 
         self.hero_roles={"Tank":0,"Dealer":1,"Healer":2}

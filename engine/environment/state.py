@@ -37,6 +37,19 @@ class GameState:
         enemy_list.sort()
         return enemy_list
     
+    def get_target_position(self,agent_id,action:int):
+        if not self.is_alive(agent_id):
+            return None
+        
+        pos=self.positions[agent_id]
+        x,y=pos[0],pos[1]
+        if action==0 and y>0 :return (x,y-1)
+        elif action==1 and y<self.grid_size-1 :return (x,y+1)
+        elif action==2 and x>0 :return (x-1,y)
+        elif action==3 and x<self.grid_size-1 :return (x+1,)
+        
+        return (x,y)
+    
     def distance(self, id_a:int, id_b:int) -> int:
         p1, p2 = self.positions[id_a], self.positions[id_b]
         return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])

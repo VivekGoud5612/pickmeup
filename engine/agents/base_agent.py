@@ -2,9 +2,9 @@ from engine.agents.agent_data import AgentIdentity
 from engine.agents.PPO.agent import Agent
 
 class BaseAgent:
-    def __init__(self,agent_id :int ,role :str):
+    def __init__(self,agent_id :int ,role :str,grid_size):
         identity_factory=AgentIdentity()
-        self.identity=identity_factory.create_identity(agent_id,role)
+        self.identity=identity_factory.create_identity(agent_id,role,grid_size)
 
         self.id=self.identity.id
         self.role=self.identity.role

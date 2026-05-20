@@ -23,10 +23,10 @@ class AgentIdentityFormat:
     action_space_size:int=7
 
 class AgentIdentity:
-    def create_identity(self, agent_id : int, role: str = None):  ## For now , later we use this to create diverse agent identities and base agent takes that and 
+    def create_identity(self, agent_id : int, role: str = None, grid_size: int =20):  ## For now , later we use this to create diverse agent identities and base agent takes that and 
          ## the rule based or LLM agent with some sort of identity
         
-        _data = self._get_data(role)
+        _data = self._get_data(role,grid_size)
         return AgentIdentityFormat(
             id = agent_id,
             pos = _data['pos'],
@@ -35,10 +35,10 @@ class AgentIdentity:
         )
     
     @staticmethod
-    def _get_data(role : str) ->dict:
+    def _get_data(role : str,grid_size) ->dict:
         if role == "Tank":
             return {
-                "pos": (1,0),
+                "pos": (0,random.randint(2,grid_size-1)),
                 "hp": 150,
                 "max_hp" : 150,
                 "skills" : {
@@ -49,7 +49,7 @@ class AgentIdentity:
 
         elif role == "Dealer":
             return {
-                "pos": (0, 1),
+                "pos": (random.randint(0,grid_size-1), 1),
                 "hp": 80,
                 "max_hp" : 80,
                 "skills" : {
@@ -60,7 +60,7 @@ class AgentIdentity:
         
         elif role == "Healer":
             return {
-                "pos": (0, 0),
+                "pos": (random.randint(0,grid_size-1), 0),
                 "hp": 60,
                 "max_hp" : 60,
                 "skills" : {
@@ -70,7 +70,7 @@ class AgentIdentity:
             }
         elif role == "Boss":
             return {
-                "pos": (random.randint(3,9), 9),
+                "pos": (random.randint(14,grid_size-1), random.randint(14,grid_size)),
                 "hp": 300,
                 "max_hp" : 300,
                 "skills" : {

@@ -5,8 +5,9 @@ from collections import deque
 from engine.environment.env import RaidEnv
 
 def train():
+    grid_size=20
     print("Initializing Advanced Raid MARL Environment...")
-    env = RaidEnv()
+    env = RaidEnv(grid_size)
     vis = None
     
     # --- HYPERPARAMETERS ---
