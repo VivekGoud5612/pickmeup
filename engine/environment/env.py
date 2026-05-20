@@ -2,6 +2,9 @@ from .state import GameState
 from typing import List, Dict, Any
 from engine.actions.action import ActionHandler
 from engine.agents.base_agent import BaseAgent
+from typing import Any, Dict, List
+from reward import Reward_Calculator
+import copy
 
 class RaidEnv:
     def __init__(self, grid_size: int = 20):
@@ -16,6 +19,8 @@ class RaidEnv:
 
         self.hero_roles={"Tank":0,"Dealer":1,"Healer":2}
         self.boss_id=3
+        self.reward_calc = Reward_Calculator()
+        self.step_count = 0
 
     def reset(self):
         self.gamestate = GameState(self.grid_size)
@@ -29,10 +34,8 @@ class RaidEnv:
                 team=team,
             )
 
-
         return self._get_all_observations()
     
-
     def _get_all_observations(self):
         obs_dict = {}
         for uid, agent in self.agents.items():
@@ -44,77 +47,50 @@ class RaidEnv:
 
    
     def step(self, is_training: bool = True):
-        total_rewards = {0: 0.0, 1: 0.0, 2: 0.0, 3: 0.0}
-        round_summary = {}
-        turn_order = [0, 1, 2, 3]
-        
-        # 1. Track exactly who was alive at the start of this round
-        alive_at_start = {aid: self.gamestate.is_alive(aid) for aid in turn_order}
 
-        # 2. Main Turn Loop for active agents
-        for agent_id in turn_order:
-            agent = self.agents[agent_id]
-            
-            # If the agent is dead before their turn, skip them completely
-            if not self.gamestate.is_alive(agent_id):
+        step_rewards = {}   ## Simple dictionary for agents.. no need to initialize values.
+        round_summary = {}   # Round summary
+        agent_action_summary : Dict[int ,Dict[str, Any]] = {}    # Agent action summary - I was thinking to log the actions and see how everything is working out.. I need a agent action dict
+        actions = {}
+
+        alive_at_start = {aid: self.gamestate.is_alive(aid) for aid in self.agents.keys()}
+        
+        state_copy = copy.deepcopy(self.gamestate)
+
+        for agent_id, agent in self.agents.items():  ## Having both agent id and agent object helps
+
+            if not self.gamestate.is_alive(agent_id):  ## Iterate to the next agent if the current agent is not alive
                 continue
 
-            # Get current observations and action masks
-            obs = self.get_obs_for_agents(agent_id)
-            mask = self.gamestate.get_action_mask(agent_id)
-            
-            # Agent decides its action
-            action = agent.get_action(obs, mask, is_training=is_training)
+            obs = self.get_obs_for_agents(agent_id)  ## Observation for a single agent.... 
+            action_mask = self.gamestate.get_action_mask(agent_id)   #We are using a game state function to get the action mask .. which stores 1 for valid actions and 0 for invalid actions for that state.
 
-            # Execute the action inside the environment
-            summary = ActionHandler.perform_action(agent_id, action, self.gamestate)
-            round_summary[agent_id] = summary
+            action = agent.get_action(obs, action_mask, is_training)  ##Store all actions inside a dictionary to send them to action sequencer to transition states directly at once
+            actions[agent_id] = action  #Store them in dictionary with agent ids as keys
 
-            # Calculate base rewards (Boss kills are already natively calculated here)
-            reward = self.calculate_reward(agent_id, summary)
-            total_rewards[agent_id] = reward
+        step_summary = ActionSequencer.resolve_step(actions, self.gamestate)  ##Get the summaries from ActionSequencer
 
-            # Check if this specific action triggered match termination
-            done = self.gamestate.is_terminal()
-            
-            # Store the standard step trajectory data
-            agent.policy.store_reward(reward, done)
+        #Need to calculate results next
+        for agent_id , summary in step_summary.items():  ##Looping over all the step summary dictionary which contains all the things the agents did
 
-            # If an action ended the entire match, break the turn loop immediately
-            if done:
-                break
+            reward = self.reward_calc.calculate_reward(state_copy, self.gamestate, step_summary)
+            step_rewards[agent_id] = reward   ##Store the reward for each agent..
+            print(f'Step {self.step_count} ... {self.gamestate.identities[agent_id].role} is taking the action {actions[agent_id]} with reward {reward}')
 
-        # 3. --- ONE-TIME HERO DEATH PENALTY ---
-        DEATH_PENALTY = -1.0  
+            done = not self.gamestate.is_alive(agent_id)
+            self.agents[agent_id].policy.store_reward(reward, done)
 
-        for agent_id in turn_order:
-            agent = self.agents[agent_id]
-            
-            # Only apply if it's a Hero, they were alive at start, but are now dead
-            if agent_id != self.boss_id and alive_at_start[agent_id] and not self.gamestate.is_alive(agent_id):
-                # Apply penalty to environment step return dictionary
-                total_rewards[agent_id] += DEATH_PENALTY 
-                
-                # Retroactively apply penalty to their last action's memory slot
-                if len(agent.policy.memory["rewards"]) > 0:
-                    agent.policy.memory["rewards"][-1] += DEATH_PENALTY
+        env_done = self.gamestate.is_terminal()
+        if env_done:
+            for agent in self.agents.values():
+                if len(agent.policy.memory["dones"]) > 0:
                     agent.policy.memory["dones"][-1] = True
-
-        # 4. --- GLOBAL TERMINAL FALLBACK ---
-        # If the match ended this round, find the surviving agents and close out their memory flags
-        if self.gamestate.is_terminal():
-            for agent_id in turn_order:
-                agent = self.agents[agent_id]
-                
-                # If they survived the match but it abruptly ended, flip their last 'done' to True
-                if self.gamestate.is_alive(agent_id):
-                    if len(agent.policy.memory["dones"]) > 0:
-                        agent.policy.memory["dones"][-1] = True
-
-        # 5. Advance cooldowns and return normalized observations
-        self.gamestate.update_cooldowns()
-        return self._get_all_observations(), total_rewards, self.gamestate.is_terminal(), round_summary
-
+        
+        self.step_count += 1
+        
+        return self._get_all_observations(), step_rewards, env_done
+                                                                                                                                                                                           
+        
     def get_obs_for_agents(self,agent_id):
 
         if self.agents[agent_id].role=="Boss":

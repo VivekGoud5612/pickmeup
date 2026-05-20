@@ -60,9 +60,9 @@ class AgentIdentity:
         
         elif role == "Healer":
             return {
-                "pos": (random.randint(0,grid_size-1), 0),
-                "hp": 60,
-                "max_hp" : 60,
+                "pos": (0, 0),
+                "hp": 70,
+                "max_hp" : 70,
                 "skills" : {
                     "heal" :Skill(power=-10,min_range=0,max_range=2,cooldown=1),
                     "all_heal" :Skill(power=-30,min_range=1,max_range=4,cooldown=7),
