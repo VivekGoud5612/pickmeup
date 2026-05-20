@@ -14,7 +14,7 @@ eps_clip=0.2
 K_epoch=4
 
 class Agent:
-    def __init__(self,state_size:int,action_size:int,agent_id:int,role:str):
+    def __init__(self, state_size:int, action_size:int, agent_id:int, role:str):
         self.state_size=state_size
         self.action_size=action_size
 
@@ -55,7 +55,7 @@ class Agent:
                 self.memory["log_probs"].append(log_prob.item())
                 self.memory["values"].append(value.item())
                 self.memory["masks"].append(mask)
-
+                
                 return action.item()
                 
             else:

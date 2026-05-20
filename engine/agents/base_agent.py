@@ -1,5 +1,5 @@
 from engine.agents.agent_data import AgentIdentity
-from engine.agents.PPO.agent import Agent
+from engine.agents.ppo.agent import Agent
 
 class BaseAgent:
     def __init__(self,agent_id :int ,role :str):

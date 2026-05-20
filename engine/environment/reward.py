@@ -9,6 +9,7 @@ class Reward_Calculator:
         self.w_dealer_dmg = 0.5
         self.w_healer_eff = 0.6
         self.w_tank_block = 0.3
+
         self.w_tank_dmg=0.2
         self.w_boss_dmg_tank = 0.3
         self.w_boss_dmg_squishy = 1.2
@@ -38,7 +39,7 @@ class Reward_Calculator:
 
         return hero_potential,boss_potential
     
-    def calculate_reward(self,old_state,new_state,summaries:Dict[int,Dict[str,Any]])->Dict[int,float]:
+    def calculate_reward(self, old_state, new_state, summaries : Dict[int, Dict[str, Any]]):
         
         agent_ids=list(new_state.identites.keys())
         rewards={agent_id:0.0 for agent_id in agent_ids}
