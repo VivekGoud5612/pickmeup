@@ -20,7 +20,7 @@ class Agent:
 
         self.agent_id=agent_id
         self.role=role
-        self.c2=0.1
+        self.c2=0.3
 
         self.policy=Actor_Critic(state_size,action_size)
         self.optimizer=optim.Adam(self.policy.parameters(),lr=lr)
@@ -59,7 +59,8 @@ class Agent:
                 return action.item()
                 
             else:
-                action=torch.argmax(logits,dim=-1)
+                dist=Categorical(logits=logits)
+                action=dist.sample()
                 return action.item()
             
 
@@ -84,6 +85,7 @@ class Agent:
                 gae=0
             else:
                 next_value=old_values[i+1]
+
 
             delta=rewards[i]+(gamma*next_value)-old_values[i]
             gae=delta+(gamma*lam*gae)
@@ -123,7 +125,7 @@ class Agent:
 
     
     def clear_memory(self):
-        for key in self.memory:
+        for key in self.memory.keys():
             self.memory[key].clear()
 
     def save(self, path):

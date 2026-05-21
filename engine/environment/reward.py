@@ -8,15 +8,16 @@ class Reward_Calculator:
         
         self.w_dealer_dmg = 0.5
         self.w_healer_eff = 0.6
-        self.w_tank_block = 0.3
+        self.w_tank_block = 0.9
 
         self.w_tank_dmg=0.2
         self.w_boss_dmg_tank = 0.3
         self.w_boss_dmg_squishy = 1.2
+        self.w_boss_aoe_dmg=1.5
         self.w_tank_fail_protect = -1.0
         self.w_victim_damage = -0.5
 
-        self.time_step_penalty = -0.01
+        self.time_step_penalty = -0.1
         self.invalid_action_penalty = -0.1
         self.win_bounty = 100.0
         self.death_penalty = -50.0
@@ -41,7 +42,7 @@ class Reward_Calculator:
     
     def calculate_reward(self, old_state, new_state, summaries : Dict[int, Dict[str, Any]]):
         
-        agent_ids=list(new_state.identites.keys())
+        agent_ids=list(new_state.identities.keys())
         rewards={agent_id:0.0 for agent_id in agent_ids}
 
 
@@ -78,7 +79,7 @@ class Reward_Calculator:
             action_type=summary.get("action_type")
 
             if action_type=="move" and summary.get("moved",False):
-                rewards[id]+=0.05
+                rewards[id]+=0.00
             
             elif action_type=="combat" and summary.get("combat_stats"):
                 stats=summary.get("combat_stats")
@@ -91,23 +92,30 @@ class Reward_Calculator:
                 elif role=="Tank":
                     if stats.get("blocked",False):
                         rewards[id]+=self.w_tank_block
-                    else:
+                    elif stats.get("damage_dealt",False):
                         rewards[id]+=stats.get("damage_dealt",0)*self.w_tank_dmg
                 elif role=="Boss":
                     damage=stats.get("damage_dealt",0)
                     target_id=stats.get("target_id")
 
                     if damage>0 and target_id is not None:
-                        rewards[target_id]+=damage*self.w_victim_damage
                         target_role=new_state.identities[target_id].role
+
 
                         if target_role=="Tank":
                             rewards[id]+=damage*self.w_boss_dmg_tank
+                            tank_summary=summaries.get(target_id,{})
+                            combat_stats=tank_summary.get("combat_stats") or {}
+
+                            if combat_stats.get("blocked",False):
+                                rewards[target_id]+=self.w_tank_block
 
                         elif target_role in ["Dealer","Healer"]:
                             rewards[id]+=damage*self.w_boss_dmg_squishy
-                            if tank_id is not None and new_state.is_alive(tank_id):
-                                rewards[tank_id]+=damage*self.w_tank_fail_protect
+
+                    elif target_id is None:
+                        rewards[id]+=damage*self.w_boss_aoe_dmg
+                            
         
         #Sparse Rewards
 

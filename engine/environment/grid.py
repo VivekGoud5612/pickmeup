@@ -1,7 +1,7 @@
 import pygame 
 
 class Grid:
-    def __init__(self,grid_size=10,cell_size=60):
+    def __init__(self,grid_size,cell_size=60):
         pygame.init()
 
         self.grid_size=grid_size

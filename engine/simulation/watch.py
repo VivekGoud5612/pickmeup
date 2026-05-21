@@ -6,9 +6,10 @@ from engine.environment.env import RaidEnv
 from engine.environment.grid import Grid
 
 def watch():
+    grid_size=13
     print("Initializing Advanced Raid MARL Watch Mode...")
-    env = RaidEnv()
-    vis = Grid(grid_size=10)
+    env = RaidEnv(grid_size)
+    vis = Grid(grid_size)
     
     # --- SETTINGS ---
     CHECKPOINT_EPISODE = 25000
@@ -50,9 +51,9 @@ def watch():
         
         while not done and steps < MAX_STEPS_PER_ROUND:
             try:
-                _, _, done, _ = env.step(is_training=False) 
+                _, _, done = env.step(is_training=False) 
             except TypeError:
-                _, _, done, _ = env.step()
+                _, _, done= env.step()
                 
             steps += 1
             vis.render(env.gamestate)

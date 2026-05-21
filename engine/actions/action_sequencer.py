@@ -36,7 +36,7 @@ class Action_Sequencer:
                     movement_intents[target_pos]=[]
                     movement_intents[target_pos].append(id)
         
-        for target_pos,ids in movement_intents:
+        for target_pos,ids in movement_intents.items():
                 
                 if len(ids)>1:
                     for id in ids:
@@ -48,7 +48,8 @@ class Action_Sequencer:
                             "combat_stats": None
                         }
                 else:
-                    summaries[id]=ActionHandler.perform_action(id,action_dict[id],gamestate)
+                    for id in ids:
+                        summaries[id]=ActionHandler.perform_action(id,action_dict[id],gamestate)
 
 #Phase-6
 #Loop for to check agents not in summary if used action==5,that is basic_attck,if so implement it
@@ -62,5 +63,7 @@ class Action_Sequencer:
 #Also check if alive ,since already implemented attck in previous phase
         for id,action in action_dict.items():
             role=gamestate.identities[id].role
-            if id not in summaries and gamestate.is_alive[id] and action==6:
+            if id not in summaries and gamestate.is_alive(id) and action==6:
                 summaries[id]=ActionHandler.perform_action(id,action,gamestate)
+
+        return summaries

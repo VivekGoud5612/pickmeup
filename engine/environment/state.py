@@ -1,6 +1,7 @@
 from typing import Dict, List, Tuple, Any
 from engine.agents.agent_data import AgentIdentity 
 import numpy as np
+import random
 
 class GameState:
     def __init__(self, grid_size:int=10):
@@ -14,18 +15,24 @@ class GameState:
         self.is_blocking: Dict[int, bool] = {}
         
         # --- NEW: Shared Team Map Tracking ---
-        self.team_visited_tiles: Dict[str, set] = {"Heroes": set(), "Boss": set()}
+        self.team_visited_tiles: Dict[str, set] = {"Heroes": set(),"Boss": set()}
 
     def register_agents(self, agent_id:int, identity:AgentIdentity, team:str):
         self.identities[agent_id] = identity
-        self.positions[agent_id] = identity.pos
         self.hp[agent_id] = identity.stats.max_hp
         self.teams[agent_id] = team
         self.cooldowns[agent_id] = [0 for _ in identity.stats.skills]
         self.is_blocking[agent_id] = False
-        
-        # --- NEW: Record starting positions in the shared map ---
-        self.team_visited_tiles[team].add(identity.pos)
+
+        if self.teams[agent_id]=="Heroes":
+            pos=(random.randint(0,self.grid_size-1),random.randint(0,2))
+            while(pos in self.positions.values()):
+                pos=(random.randint(0,self.grid_size-1),random.randint(0,2))
+            self.positions[agent_id]=pos
+        elif self.teams[agent_id]=="Boss":
+            self.positions[agent_id]=(random.randint(9,self.grid_size-1),random.randint(9,self.grid_size-1))
+
+        self.team_visited_tiles[team].add(self.positions[agent_id])
 
     def is_alive(self, agent_id) -> bool:
         return self.hp.get(agent_id, 0) > 0

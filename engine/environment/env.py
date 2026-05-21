@@ -3,18 +3,19 @@ from typing import List, Dict, Any
 from engine.actions.action import ActionHandler
 from engine.agents.base_agent import BaseAgent
 from typing import Any, Dict, List
-from reward import Reward_Calculator
+from .reward import Reward_Calculator
 import copy
+from engine.actions.action_sequencer import Action_Sequencer
 
 class RaidEnv:
     def __init__(self, grid_size: int = 20):
         self.grid_size = grid_size
         self.gamestate=None
         self.agents = {
-            0: BaseAgent(0, "Tank",self.grid_size),
-            1: BaseAgent(1, "Dealer",self.grid_size),
-            2: BaseAgent(2, "Healer",self.grid_size),
-            3: BaseAgent(3, "Boss",self.grid_size)
+            0: BaseAgent(0, "Tank",),
+            1: BaseAgent(1, "Dealer",),
+            2: BaseAgent(2, "Healer",),
+            3: BaseAgent(3, "Boss",)
         }
 
         self.hero_roles={"Tank":0,"Dealer":1,"Healer":2}
@@ -68,17 +69,20 @@ class RaidEnv:
             action = agent.get_action(obs, action_mask, is_training)  ##Store all actions inside a dictionary to send them to action sequencer to transition states directly at once
             actions[agent_id] = action  #Store them in dictionary with agent ids as keys
 
-        step_summary = ActionSequencer.resolve_step(actions, self.gamestate)  ##Get the summaries from ActionSequencer
+        step_summary = Action_Sequencer.resolve_step(actions, self.gamestate)  ##Get the summaries from ActionSequencer
 
+       
+        
+        step_reward = self.reward_calc.calculate_reward(state_copy, self.gamestate, step_summary)
+    
         #Need to calculate results next
-        for agent_id , summary in step_summary.items():  ##Looping over all the step summary dictionary which contains all the things the agents did
-
-            reward = self.reward_calc.calculate_reward(state_copy, self.gamestate, step_summary)
-            step_rewards[agent_id] = reward   ##Store the reward for each agent..
-            print(f'Step {self.step_count} ... {self.gamestate.identities[agent_id].role} is taking the action {actions[agent_id]} with reward {reward}')
+        for agent_id in self.agents.keys():  ##Looping over all the step summary dictionary which contains all the things the agents did
+               ##Store the reward for each agent..
+            if not is_training:
+                print(f'Step {self.step_count} ... {self.gamestate.identities[agent_id].role} is taking the action {actions[agent_id]} with reward {step_reward[agent_id]}')
 
             done = not self.gamestate.is_alive(agent_id)
-            self.agents[agent_id].policy.store_reward(reward, done)
+            self.agents[agent_id].policy.store_reward(step_reward.get(agent_id, 0.0), done)
 
         env_done = self.gamestate.is_terminal()
         if env_done:
@@ -88,7 +92,7 @@ class RaidEnv:
         
         self.step_count += 1
         
-        return self._get_all_observations(), step_rewards, env_done
+        return self._get_all_observations(), step_reward, env_done
                                                                                                                                                                                            
         
     def get_obs_for_agents(self,agent_id):

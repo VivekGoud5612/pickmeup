@@ -19,11 +19,14 @@ class ActionHandler:
 
         team_name = gamestate.teams[agent_id]
         new_pos = gamestate.positions[agent_id]
+
+        is_new_tile=False
         
         # Check if the TILE is new to the ENTIRE TEAM
-        is_new_tile = new_pos not in gamestate.team_visited_tiles[team_name]
-        if is_new_tile:
-            gamestate.team_visited_tiles[team_name].add(new_pos)
+        if team_name=="Heroes":
+            is_new_tile = new_pos not in gamestate.team_visited_tiles[team_name]
+            if is_new_tile:
+                gamestate.team_visited_tiles[team_name].add(new_pos)
             
         return is_new_tile
 
@@ -134,6 +137,7 @@ class ActionHandler:
 
             elif skill_name=="aoe":
                 total_damage=0
+
 
                 for h_id in alive_heros:
                     dist=gamestate.distance(h_id,agent_id)

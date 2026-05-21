@@ -3,9 +3,10 @@ import time
 import numpy as np
 from collections import deque
 from engine.environment.env import RaidEnv
+import torch
 
 def train():
-    grid_size=20
+    grid_size=13
     print("Initializing Advanced Raid MARL Environment...")
     env = RaidEnv(grid_size)
     vis = None
@@ -17,6 +18,7 @@ def train():
     LOG_INTERVAL = 100            # Print console stats every 100 games
     SAVE_INTERVAL = 5000          # Save weights every 5000 games
     MAX_ROUNDS = 150              # Prevent infinite games (kiting forever)
+    CHECKPOINT_EPISODE=25000
     
     # --- TRACKING METRICS ---
     global_steps = 0
@@ -24,31 +26,53 @@ def train():
                       2: deque(maxlen=LOG_INTERVAL), 3: deque(maxlen=LOG_INTERVAL)}
     recent_wins = deque(maxlen=LOG_INTERVAL) # 1 for Hero win, 0 for Boss win
     
-    # Create directory for saving models
-    os.makedirs("saved_models", exist_ok=True)
+    # # Create directory for saving models
+    # os.makedirs("saved_models", exist_ok=True)
+    # env.reset()
+
+    # for id,agent in env.agents.items():
+    #     role=env.gamestate.identities[id].role
+    #     model_path = f"saved_models/{role}_ep{CHECKPOINT_EPISODE}.pth"
+
+    #     if os.path.exists(model_path):
+    #         try:
+    #             # Load weights into the actual torch network inside the policy wrapper
+    #             agent.policy.policy.load_state_dict(torch.load(model_path))
+    #             print(f"Loaded: {model_path}")
+    #         except Exception as e:
+    #             print(f"ERROR loading {model_path}: {e}")
+    #             return
+    #     else:
+    #         print(f"ERROR: Could not find {model_path}. Check file names.")
+    #         return
 
     print("\nStarting Training Loop...")
-    for episode in range(1, MAX_EPISODES + 1):
+    for episode in range(1,MAX_EPISODES + 1):
         env.reset()
+        episode_rewards={}
+
+        for id,agent in env.agents.items():
+            #print(f"{env.gamestate.identities[id].role} created at position:{env.gamestate.positions[id][0] , env.gamestate.positions[id][1]}")
+            episode_rewards[id]=0.0
         done = False
         rounds_played = 0
-        episode_rewards = {0: 0.0, 1: 0.0, 2: 0.0, 3: 0.0}
         
         render_this_episode = (episode % RENDER_INTERVAL == 0)
         if render_this_episode:
             if vis is None:
                 from engine.environment.grid import Grid
-                vis = Grid(grid_size=10)
+                vis = Grid(grid_size)
             print(f"\n>>> RENDERING EVALUATION EPISODE {episode} <<<")
 
         # --- THE MATCH LOOP ---
         while not done and rounds_played < MAX_ROUNDS:
             # 1. Step the environment
-            next_obs, rewards, done, summary = env.step(is_training=True)
+            next_obs, rewards, done = env.step(is_training=True)
+            #print(rewards)
             
             # 2. Accumulate metrics
             for agent_id, reward in rewards.items():
-                episode_rewards[agent_id] += reward
+                episode_rewards[agent_id] += reward/100.0
             
             rounds_played += 1
             global_steps += 1
@@ -97,8 +121,8 @@ def train():
             win_rate = np.mean(recent_wins) * 100
             
             print(f"Ep {episode:5d} | Hero Win Rate: {win_rate:5.1f}% | "
-                  f"Avg Rewards -> Tank: {avg_r[0]:6.1f} | Dlr: {avg_r[1]:6.1f} | "
-                  f"Hlr: {avg_r[2]:6.1f} | Boss: {avg_r[3]:6.1f}")
+                  f"Avg Rewards -> Tank: {avg_r[0]} | Dlr: {avg_r[1]} | "
+                  f"Hlr: {avg_r[2]} | Boss: {avg_r[3]}")
 
         # --- SAVING MODELS ---
         if episode % SAVE_INTERVAL == 0:
