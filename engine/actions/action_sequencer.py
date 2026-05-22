@@ -4,7 +4,6 @@ from engine.actions.action import ActionHandler
 class Action_Sequencer:
 
     @staticmethod
-
     def resolve_step(action_dict:Dict[int,int],gamestate)->Dict[str,Dict[str,Any]]:
 
         summaries={}

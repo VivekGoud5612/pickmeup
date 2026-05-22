@@ -11,14 +11,14 @@ class RaidEnv:
         self.grid_size = grid_size
         self.gamestate=None
         self.agents = {
-            0: BaseAgent(0, "Tank",self.grid_size),
-            1: BaseAgent(1, "Dealer",self.grid_size),
-            2: BaseAgent(2, "Healer",self.grid_size),
-            3: BaseAgent(3, "Boss",self.grid_size)
+            0: BaseAgent(0, "Tank", self.grid_size),
+            1: BaseAgent(1, "Dealer", self.grid_size),
+            2: BaseAgent(2, "Healer", self.grid_size),
+            3: BaseAgent(3, "Boss", self.grid_size)
         }
 
-        self.hero_roles={"Tank":0,"Dealer":1,"Healer":2}
-        self.boss_id=3
+        self.hero_roles = {"Tank":0, "Dealer":1, "Healer":2}
+        self.boss_id = 3
         self.reward_calc = Reward_Calculator()
         self.step_count = 0
 
@@ -26,12 +26,12 @@ class RaidEnv:
         self.gamestate = GameState(self.grid_size)
 
         for agent_id,agent in self.agents.items():
-            team="Boss" if agent.role=="Boss" else "Heroes"
+            team= "Boss" if agent.role=="Boss" else "Heroes"
 
             self.gamestate.register_agents(
-                agent_id=agent_id,
-                identity=agent.identity,
-                team=team,
+                agent_id = agent_id,
+                identity = agent.identity,
+                team = team,
             )
 
         return self._get_all_observations()

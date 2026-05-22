@@ -1,86 +1,35 @@
- total_rewards = {0: 0.0, 1: 0.0, 2: 0.0, 3: 0.0}
-        round_summary = {}
-        turn_order = [0, 1, 2, 3]
-        
-        # 1. Track exactly who was alive at the start of this round
-        alive_at_start = {aid: self.gamestate.is_alive(aid) for aid in turn_order}
+import torch 
+import torch.nn as nn
 
-        # 2. Main Turn Loop for active agents
-        for agent_id in turn_order:
-            agent = self.agents[agent_id]
-            
-            # If the agent is dead before their turn, skip them completely
-            if not self.gamestate.is_alive(agent_id):
-                continue
+class Actor_Critic(nn.Module):
+    def __init__(self,state_size,action_size):
+        super(Actor_Critic,self).__init__()
 
-            # Get current observations and action masks
-            obs = self.get_obs_for_agents(agent_id)
-            mask = self.gamestate.get_action_mask(agent_id)
-            
-            # Agent decides its action
-            action = agent.get_action(obs, mask, is_training=is_training)
+        self.actor=nn.Sequential(
+            nn.Linear(state_size,128),
+            nn.Tanh(),
+            nn.Linear(128,128),
+            nn.Tanh(),
+            nn.Linear(128,action_size),
+        )
 
-            # Execute the action inside the environment
-            summary = ActionHandler.perform_action(agent_id, action, self.gamestate)
-            round_summary[agent_id] = summary
+        self.critic=nn.Sequential(
+            nn.Linear(state_size,128),
+            nn.Tanh(),
+            nn.Linear(128,128),
+            nn.Tanh(),
+            nn.Linear(128,1),
+        )
 
-            # Calculate base rewards (Boss kills are already natively calculated here)
-            reward = self.calculate_reward(agent_id, summary)
-            total_rewards[agent_id] = reward
+    def forward(self,state:torch.Tensor,mask:torch.Tensor):
 
-            # Check if this specific action triggered match termination
-            done = self.gamestate.  is_terminal()
-            
-            # Store the standard step trajectory data
-            agent.policy.store_reward(reward, done)
+        logits=self.actor(state)
+        value=self.critic(state)
 
-            # If an action ended the entire match, break the turn loop immediately
-            if done:
-                break
+        if mask is not None:
+            logits=logits.masked_fill(~mask,float('-inf'))
 
-        # 3. --- ONE-TIME HERO DEATH PENALTY ---
-        DEATH_PENALTY = -1.0  
-
-        for agent_id in turn_order:
-            agent = self.agents[agent_id]
-            
-            # Only apply if it's a Hero, they were alive at start, but are now dead
-            if agent_id != self.boss_id and alive_at_start[agent_id] and not self.gamestate.is_alive(agent_id):
-                # Apply penalty to environment step return dictionary
-                total_rewards[agent_id] += DEATH_PENALTY 
-                
-                # Retroactively apply penalty to their last action's memory slot
-                if len(agent.policy.memory["rewards"]) > 0:
-                    agent.policy.memory["rewards"][-1] += DEATH_PENALTY
-                    agent.policy.memory["dones"][-1] = True
- 
-        # 4. --- GLOBAL TERMINAL FALLBACK ---
-        # If the match ended this round, find the surviving agents and close out their memory flags
-        if self.gamestate.is_terminal():
-            for agent_id in turn_order:
-                agent = self.agents[agent_id]
-                
-                # If they survived the match but it abruptly ended, flip their last 'done' to True
-                if self.gamestate.is_alive(agent_id):
-                    if len(agent.policy.memory["dones"]) > 0:
-                        agent.policy.memory["dones"][-1] = True
-
-        # 5. Advance cooldowns and return normalized observations
-        self.gamestate.update_cooldowns()
-        return self._get_all_observations(), total_rewards, self.gamestate.is_terminal(), round_summary
-
-
-
-
-
-
-
-
-
-
-
-
-
+        return logits,value
 
     def calculate_reward(self,agent_id:int,summary:Dict)->float:
         reward=-0.01

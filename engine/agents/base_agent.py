@@ -1,24 +1,27 @@
 from engine.agents.agent_data import AgentIdentity
 from engine.agents.ppo.agent import Agent
-
+from typing import List
+from engine.environment.observation import Observation
 class BaseAgent:
-    def __init__(self,agent_id :int ,role :str,grid_size):
-        identity_factory=AgentIdentity()
-        self.identity=identity_factory.create_identity(agent_id,role,grid_size)
+    def __init__(self, agent_id :int, role :str, gamestate : GameState):
+        
+        identity_factory = AgentIdentity()
+        self.identity = identity_factory.create_identity(agent_id, role)
 
-        self.id=self.identity.id
-        self.role=self.identity.role
-        self.pos=list(self.identity.pos)
-        self.stats=self.identity.stats
-        self.action_space_size=self.identity.action_space_size
+        self.id = self.identity.id
+        self.role = self.identity.role
+        self.stats = self.identity.stats
+        self.action_space_size = self.identity.action_space_size
 
-        self.policy=Agent(18,self.action_space_size,self.id,self.role)
+        dummy_obs = ObservationEncoder.build_observation(self.id, gamestate)
+        obs_size = len(dummy_obs.to_vector())
+        self.policy = AgentPolicy(obs_size, self.identity.action_space_size)
 
-
-    def get_action(self,observation,action_mask,is_training):
+    def get_action(self, observation : Observation, action_mask : List[int], is_training : bool):
+        
         if self.policy is not None:
-            action=self.policy.get_action(observation,action_mask,is_training)
-
+            action = self.policy.get_action(observation, action_mask, is_training)
         else:
-            action=4
+            action = 4
+
         return action

@@ -1,135 +1,124 @@
 import torch
-import torch.nn.functional as F
-import torch.optim as optim
-from torch.distributions import Categorical
+import torch.nn.functional as func ## Functional neural network utilities like .mse_loss()
+import torch.optim as optim 
+from torch.distributions import Categorical  ##Creates probabilites distributions over discrete actions
 import numpy as np
-from typing import List
-from .model import Actor_Critic
+from typing import List 
+from engine.agents.ppo.model import ActorCritic
+from engine.environment.observation import Observation
 
-lr=3e-4
-gamma=0.99
-lam=0.95
-c1=0.5
-eps_clip=0.2
-K_epoch=4
+LR = 3e-4   ##Learning Rate
+GAMMA = 0.99   ## Discounted Factor for future value.
+LAMBDA = 0.95  ## Discounted factor for future advantage function (BIAS and VARIANCE Tradeoff)
+C1 = 0.5   ##Weight for critic loss... Need to understand more
+EPS_CLIP = 0.2   ##PPO clipping range
+K_EPOCH = 4  ## reuse rollout data 4 times
 
-class Agent:
-    def __init__(self, state_size:int, action_size:int, agent_id:int, role:str):
-        self.state_size=state_size
-        self.action_size=action_size
+class AgentPolicy:
+    def __init__(self, obs_size : int, action_size : int):
+        self.action_size = action_size 
 
-        self.agent_id=agent_id
-        self.role=role
-        self.c2=0.1
+        self.c2 = 0.1 ## Entropy coefficient.. controls exploration strength
+        self.policy = ActorCritic(obs_size, action_size)
+        self.optimizer = optim.Adam(parameters = self.policy.parameters(), lr = LR)
 
-        self.policy=Actor_Critic(state_size,action_size)
-        self.optimizer=optim.Adam(self.policy.parameters(),lr=lr)
-
-        self.memory={
-            "states":[],
-            "actions":[],
-            "log_probs":[],
-            "values":[],
-            "rewards":[],
-            "masks":[],
-            "dones":[],
+        self.memory = {
+            'states'  : [],
+            'actions' : [],
+            'log_probs' : [],
+            'values' : [],
+            'rewards' : [],
+            'masks' : [],
+            'dones' : [],
         }
 
-    def store_reward(self,reward:float,done:bool):
-        self.memory["rewards"].append(reward)
-        self.memory["dones"].append(done)
+    def store_reward(self, reward : float, done : bool):
+        self.memory['rewards'].append(reward)
+        self.memory['dones'].append(done)
+    
+    def get_action(self, observation : Observation, mask : List[int], is_training = True):
+        obs_vector = observation.to_vector()
 
-    def get_action(self,observation:np.ndarray ,mask:List[int],is_training=True):
-        state_tensor=torch.FloatTensor(observation).unsqueeze(0)
-        mask_tensor=torch.BoolTensor(mask).unsqueeze(0)
+        state_tensor = torch.FloatTensor(obs_vector).unsqueeze(0)
+        mask_tensor = torch.BoolTensor(mask).unsqueeze(0)
 
         with torch.no_grad():
-            logits,value=self.policy(state_tensor,mask_tensor)
-            if is_training:
-                dist=Categorical(logits=logits)
-                action=dist.sample()
-                log_prob=dist.log_prob(action)
+            logits, value = self.policy(state_tensor, mask_tensor)
 
-                self.memory["states"].append(observation)
-                self.memory["actions"].append(action.item())
-                self.memory["log_probs"].append(log_prob.item())
-                self.memory["values"].append(value.item())
-                self.memory["masks"].append(mask)
-                
-                return action.item()
-                
-            else:
-                action=torch.argmax(logits,dim=-1)
+            if is_training:
+                dist = Categorical(logits = logits)
+                action = dist.sample()
+                log_prob = dist.log_prob(action)
+
+                self.memory['states'].append(obs_vector)
+                self.memory['actions'].append(action.item())  ## .item() is the get the value stored inside
+                self.memory['log_probs'].append(log_prob.item())
+                self.memory['values'].append(value.item())
+                self.memory['masks'].append(mask)
+
                 return action.item()
             
+            else:
+                action = torch.argmax(logits, dim = -1)
+                return action.item()
 
     def learn(self):
 
-        old_states = torch.FloatTensor(np.array(self.memory["states"]))
-        old_actions = torch.LongTensor(self.memory["actions"])
-        old_log_probs = torch.FloatTensor(self.memory["log_probs"])
-        old_values = torch.FloatTensor(self.memory["values"])
-        old_masks = torch.BoolTensor(np.array(self.memory["masks"]))
-        
-        rewards = self.memory["rewards"]
-        dones = self.memory["dones"]
+        old_states = torch.FloatTensor(np.array(self.memory['states']))
+        old_actions = torch.LongTensor(self.memory['actions'])
+        old_log_probs = torch.FloatTensor(self.memory['log_probs'])
+        old_values = torch.FloatTensor(self.memory['values'])
+        old_masks = torch.BoolTensor(np.array(self.memory['masks']))
 
-        advantages=[]
-        gae=0
+        rewards = self.memory['rewards']
+        dones = self.memory['dones']
+
+        advantages = []
+        gae = 0
 
         for i in reversed(range(len(rewards))):
 
-            if dones[i] or i==len(rewards)-1:
-                next_value=0
-                gae=0
+            if dones[i] or i == len(rewards) - 1:
+                next_value = 0
+                gae = 0
             else:
-                next_value=old_values[i+1]
+                next_value = old_values[i+1]
 
-            delta=rewards[i]+(gamma*next_value)-old_values[i]
-            gae=delta+(gamma*lam*gae)
+            delta = rewards[i] + (GAMMA*next_value) - old_values[i]
+            gae = delta + (GAMMA*LAMBDA*gae)
 
-            advantages.insert(0,gae)
+            advantages.insert(0, gae)
+        advantages = torch.FloatTensor(advantages)
+        returns = advantages + old_values
 
-        advantages=torch.FloatTensor(advantages)
-        returns=advantages + old_values
+        advantages = (advantages - advantages.mean())/(advantages.std() + 1e-7)
 
-        advantages=(advantages-advantages.mean())/(advantages.std() +1e-7)
+        for i in range(K_EPOCH):  ## Learn 4 times for each data ...
 
-        for i in range(K_epoch):
+            logits, current_values = self.policy(old_states, old_masks)  ##Logits and Values for all the previos memory at once... So we get 2048, 7, 1 size of actions
+            dists = Categorical(logits = logits)
+            entropy = dists.entropy()  # We get entropy from the same distribution
 
-            logits,curr_values=self.policy(old_states,old_masks)
-            dists=Categorical(logits=logits)
-            entropy=dists.entropy()
-            
-            new_log_probs=dists.log_prob(old_actions)
+            new_log_probs = dists.log_prob(old_actions)
 
-            ratios=torch.exp(new_log_probs-old_log_probs)
+            ratios = torch.exp(new_log_probs - old_log_probs)
 
-            surr1=ratios*advantages
-            surr2=torch.clamp(ratios,1-eps_clip,1+eps_clip)*advantages
+            surr1 = ratios * advantages
+            surr2 = torch.clamp(ratios, 1-EPS_CLIP, 1+EPS_CLIP) * advantages
 
-            loss_clip=-torch.min(surr1,surr2).mean()
-            loss_vf=F.mse_loss(curr_values.squeeze(-1),returns)
-            loss_e=-entropy.mean()
+            loss_clip = -torch.min(surr1, surr2).mean()
+            loss_vf = func.mse_loss(curr_values.squeeze(-1), returns)
+            loss_e = -entropy.mean()
 
-            final_loss=loss_clip + (c1*loss_vf) + (self.c2*loss_e)
+            final_loss = loss_clip + (C1 * loss_vf) + (self.c2 * loss_e)
 
             self.optimizer.zero_grad()
             final_loss.backward()
             self.optimizer.step()
 
-        self.c2=max(0.01,self.c2*0.995)
+        self.c2 = max(0.01, self.c2 * 0.995) ## Decay c2 per step, to reduce entropy at the importance of entropy at the very last
         self.clear_memory()
 
-    
     def clear_memory(self):
-        for key in self.memory:
+        for key in self.memory.keys():
             self.memory[key].clear()
-
-    def save(self, path):
-        torch.save(self.policy.state_dict(), path)
-
-
-
-
-
