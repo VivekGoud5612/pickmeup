@@ -1,5 +1,16 @@
 from engine.environment.state import GameState
 from typing import Dict,List,Any
+from enum import Enum
+
+class ActionTypes(Enum):
+    UP = 'up'
+    DOWN = 'down'
+    RIGHT = 'right'
+    LEFT = 'left'
+    WAIT = 'wait'
+    BASIC = 'basic'
+    UTILITY = 'utility'
+    ULTIMATE = 'ultimate'
 
 class ActionHandler:
 

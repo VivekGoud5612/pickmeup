@@ -1,82 +1,110 @@
 from dataclasses import dataclass
 import random
+from enum import Enum 
+
+class AgentRole(Enum):
+    TANK = 'Tank'
+    DEALER = 'Dealer'
+    HEALER = 'Healer'
+    BOSS = 'Boss'
 
 @dataclass
 class Skill:
-    power:int
     min_range:int
     max_range:int
     cooldown:int
+    stamina_cost : int
+    strength_of_skill : float
+
+class SkillTypes(Enum):
+    BASIC = 'basic'
+    HEAL = 'heal'
+    BLOCK = 'block'
+    AOE = 'aoe'
+    SPECIAL = 'special'
+    AGGRO = 'aggro'
+    REGENERATE = 'regenerate'
+    ALL_HEAL = 'all_heal'
+    PIERCE = 'pierce'
+
+@dataclass 
+class Attributes:
+    strength : int 
+    defence : int 
+    stamina : int 
+    recovery_rate : int 
 
 @dataclass
-class CombatStats:
-    hp:int
-    max_hp:int
-    skills:dict[str,Skill]
+class Stats:
+    max_hp : int
+    attributes : Attributes
+    skills : dict[str,Skill]
 
 @dataclass
 class AgentIdentityFormat:
     id : int
-    pos : tuple[int, int]
-    role: str
-    stats : CombatStats
-    action_space_size:int=7
+    role: AgentRole
+    stats : Stats
 
 class AgentIdentity:
-    def create_identity(self, agent_id : int, role: str = None, grid_size: int =20):  ## For now , later we use this to create diverse agent identities and base agent takes that and 
+    ROLES : Dict[AgentRole, Dict[str, Any]] = {
+        AgentRole.TANK : {
+            'max_hp' : 160,
+            'attributes' : Attributes(strength = 20, defence = 30, stamina = 90, recovery_rate = 20) ## Gives the rate at which stamina gets recovered.. Neeed to think of correct attrbutes as well now..
+            'skills' : {
+                SkillTypes.BASIC : Skill(min_range = 1, max_range = 1, cooldown = 0, stamina_cost = 5, strength_of_skill = 1.25),
+                SkillTypes.BLOCK : Skill(min_range = 0, max_range = 0, cooldown = 10, stamina_cost = 10, strength_of_skill = 1.5), # Comparable to basic attack of dealer.. but no attack power, only able to block. But I dont know if I should another attack skill like dash or something
+                SkillTypes.AGGRO : Skill(min_range = 1, max_range = 2, cooldown = 20, stamina_cost = 30, strength_of_skill = 6),  #Need to model this wihtout an errors
+            },
+        },#Strength of a skill is similar to the rank of that skill. That is how much impact does that give ... 0-9
+
+        AgentRole.DEALER : {
+            "max_hp" : 120,
+            'attributes' : Attributes(strength = 35, defence = 20, stamina = 100, recovery_rate = 10),
+            "skills": {
+                SkillTypes.BASIC : Skill(min_range = 1, max_range = 2, cooldown = 0, stamina_cost = 5, strength_of_skill = 1.5),
+                SkillTypes.PIERCE : Skill(min_range = 1, max_range = 3, cooldown = 15, stamina_cost = 15, strength_of_skill = 1.75),
+                SkillTypes.SPECIAL : Skill(min_range = 2, max_range = 4, cooldown = 20, stamina_cost = 40, strength_of_skill = 7), ## A very straining attack
+            },
+        },
+
+        AgentRole.HEALER : {
+            'max_hp' : 70,
+            'attributes' : Attributes(strength = 15, defence = 20, stamina = 70, recovery_rate = 15),
+            'skills' : {
+                SkillTypes.BASIC : Skill(min_range = 1, max_range = 5, cooldown = 0, stamina_cost = 3, strength_of_skill = 1)
+                SkillTypes.HEAL : Skill(min_range = 0, max_range = 2, cooldown = 2, stamina_cost = 3, strength_of_skill = 2),
+                SkillTypes.ALL_HEAL : Skill(min_range = 1, max_range = 5, cooldown = 25, stamina_cost = 50, strength_of_skill = 9),
+            },
+        },
+
+        AgentRole.BOSS : {
+            "max_hp" : 1000,
+            'attributes' : Attributes(strength = ,40 defence = 30, stamina = 100, recovery_rate = 40),
+            "skills": {
+                SkillTypes.BASIC : Skill(min_range = 1, max_range = 2, cooldown = 0, stamina_cost = 3, strength_of_skill = 2),
+                SkillTypes.AOE : Skill(min_range = 1, max_range = 4, cooldown = 35, stamina_cost = 25, strength_of_skill = 4),
+                SkillTypes.REGENERATE : Skill(min_range = 0, max_range = 1, cooldown = 45, stamina_cost = 30, strength_of_skill = 6) ## Convert large amount of stamina to small hp that is proportional to strength * recovery here
+            },
+        },
+    }
+
+    @classmethod
+    def create_identity(cls, agent_id : int, role: AgentRole):  ## For now , later we use this to create diverse agent identities and base agent takes that and 
          ## the rule based or LLM agent with some sort of identity
-        
-        _data = self._get_data(role,grid_size)
+
+        data = ROLES.get(role, None)
+
+        if not data: 
+            raise ValueError('Need a valid role')
+
         return AgentIdentityFormat(
             id = agent_id,
-            pos = _data['pos'],
             role = role,
-            stats = CombatStats(hp = _data['hp'], max_hp=_data['max_hp'], skills=_data['skills'] )
+            stats = Stats(
+                max_hp = data['max_hp'],
+                attributes = data['attributes'],
+                skills = data['skills']
+            ),
         )
-    
-    @staticmethod
-    def _get_data(role : str,grid_size) ->dict:
-        if role == "Tank":
-            return {
-                "pos": (0,random.randint(2,grid_size-1)),
-                "hp": 150,
-                "max_hp" : 150,
-                "skills" : {
-                    "basic_attack" :Skill(power=10,min_range=1,max_range=1,cooldown=0),
-                    "block" :Skill(power=0,min_range=0,max_range=0,cooldown=2),
-                }
-            }
 
-        elif role == "Dealer":
-            return {
-                "pos": (random.randint(0,grid_size-1), 1),
-                "hp": 80,
-                "max_hp" : 80,
-                "skills" : {
-                    "basic_attack" :Skill(power=15,min_range=1,max_range=2,cooldown=0),
-                    "special" :Skill(power=35,min_range=2,max_range=4,cooldown=3),
-                }
-            }
-        
-        elif role == "Healer":
-            return {
-                "pos": (0, 0),
-                "hp": 70,
-                "max_hp" : 70,
-                "skills" : {
-                    "heal" :Skill(power=-10,min_range=0,max_range=2,cooldown=1),
-                    "all_heal" :Skill(power=-30,min_range=1,max_range=4,cooldown=7),
-                }
-            }
-        elif role == "Boss":
-            return {
-                "pos": (random.randint(14,grid_size-1), random.randint(14,grid_size)),
-                "hp": 300,
-                "max_hp" : 300,
-                "skills" : {
-                    "basic_attack" :Skill(power=20,min_range=1,max_range=2,cooldown=1),
-                    "aoe" :Skill(power=15,min_range=1,max_range=4,cooldown=5),
-                }
-            }
-
-        return {}

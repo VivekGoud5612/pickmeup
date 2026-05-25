@@ -1,129 +1,118 @@
-from typing import Dict,Tuple,Any
-import math
+from typing import Dict, Tuple, Any 
+import math 
 
+class RewardCalculator:
 
-class Reward_Calculator:
-    def __init__(self,):
-        self.gamma=0.99
-        
-        self.w_dealer_dmg = 0.5
-        self.w_healer_eff = 0.6
-        self.w_tank_block = 0.3
+    def __init__(self):
+        self.gamma = 0.80
 
-        self.w_tank_dmg=0.2
-        self.w_boss_dmg_tank = 0.3
-        self.w_boss_dmg_squishy = 1.2
-        self.w_tank_fail_protect = -1.0
-        self.w_victim_damage = -0.5
+        self.dealer_damage = 0.5
+        self.healer_effective = 0.6
+        self.tank_block = 0.5
 
-        self.time_step_penalty = -0.01
+        self.tank_damage = 0.2
+        self.boss_damage = 0.7
+
+        self.time_step_penalty = -0.1
         self.invalid_action_penalty = -0.1
-        self.win_bounty = 100.0
+        self.win_bount = 100.0
         self.death_penalty = -50.0
 
     
-    def calculate_potential(self,state):
-        hero_potential=0
-        total_hero_hp=0
+    def _calculate_potential(self, state : GameState):
+        hero_potential = 0
+        total_hero_hp = 0
+        boss_potential = 0
 
-        for u_id,team in state.teams.items():
-            if team=="Heroes" and state.is_alive(u_id):
-                total_hero_hp+=state.hp.get(u_id)
-                hero_potential=total_hero_hp
-                
-                if state.identities[u_id].role!="Healer" and state.get_enemies(u_id):
-                    hero_potential-=state.distance(u_id,state.get_enemies(u_id)[0])
-            
-            elif team=="Boss":
-                boss_potential=state.hp[u_id]-total_hero_hp
+        for id, team in state.teams.items():
+            if team = 'Heroes' and state.is_alive(id):
+                total_hero_hp += state.hp.get(id, 0)
 
-        return hero_potential,boss_potential
+                if state.identies[id].role != 'Healer' and state.get_enemies(id)
+                    hero_potential -= state.distance(id, state.get_enemies(id)[0])
+
+            elif team = 'Boss' and state.is_alive(id):
+                boss_potential += state.hp.get(id, 0) 
+
+
+        hero_potential += total_hero_hp
+        boss_potential -= total_hero_hp 
+
+        return hero_potential, boss_potential 
+
     
-    def calculate_reward(self, old_state, new_state, summaries : Dict[int, Dict[str, Any]]):
-        
-        agent_ids=list(new_state.identites.keys())
-        rewards={agent_id:0.0 for agent_id in agent_ids}
+    def calculate_reward(self, old_state : GameState, new_state : GameState, summaries : Dict[int, Dict[str, Any]]):
 
+        agent_ids = list(new_state.identies.keys())
+        rewards = {agent_id : 0.0 for agent in agent_id in agent_ids}
 
-        #PBRS + Step Penalty:
+        ohp, obp = self._calculate_potential(old_state)
+        nhp, nbp = self._calculate_potential(new_state)
 
-        old_hero_phi , old_boss_phi =self.calculate_potential(old_state)
-        new_hero_phi , new_boss_phi =self.calculate_potential(new_state)
+        heroes_reward = (self.gamma * nhp) - ohp
+        boss_reward = (self.gamma * nbp) - obp 
 
-        team_reward = (self.gamma * new_hero_phi) - old_hero_phi
-        boss_reward = (self.gamma * new_boss_phi) - old_boss_phi
-
-        for id in agent_ids:
-            if new_state.is_alive(id):
-                rewards[id] += self.time_step_penalty
-                if new_state.identities[id].role=="Boss":
-                    rewards[id]+=boss_reward*0.1
+        for id in agent_ids: 
+            if new_state.id_alive(id):
+                rewards[id] += self.time_step_penalty 
+                if new_state.identities[id].role = 'Boss':
+                    rewards[id] += boss_rewards * 0.1
                 else:
-                    rewards[id]+=team_reward*0.1
-        
+                    rewards[id] += hero_rewards * 0.1  ##Need to normalize this score. Also need to up the potential
 
-        #Credit Assignment:
 
-        tank_id = next((u for u, i in new_state.identities.items() if i.role == "Tank"), None)
+        tank_id = next((u for u,i in new_state.identities.items() if i.role == 'Tank'), None)
 
-        for id,summary in summaries.items():
+        for id, summary in summaries.items():
 
             if not new_state.is_alive(id):
-                continue
-
-            if summary.get("invalid",False):
-                rewards[id]+=self.invalid_action_penalty
-                continue
-
-            action_type=summary.get("action_type")
-
-            if action_type=="move" and summary.get("moved",False):
-                rewards[id]+=0.05
+                continue 
             
-            elif action_type=="combat" and summary.get("combat_stats"):
-                stats=summary.get("combat_stats")
-                role=new_state.identities[id].role
+            if summary.get('invalid', False):
+                rewards[id] += self.invalid_action_penalty 
+                continue 
 
-                if role=="Dealer":
-                    rewards[id]+=stats.get("damage_dealt",0)*self.w_dealer_dmg
-                elif role=="Healer":
-                    rewards[id]+=stats.get("healed",0)*self.w_healer_eff
-                elif role=="Tank":
-                    if stats.get("blocked",False):
-                        rewards[id]+=self.w_tank_block
-                    else:
-                        rewards[id]+=stats.get("damage_dealt",0)*self.w_tank_dmg
-                elif role=="Boss":
-                    damage=stats.get("damage_dealt",0)
-                    target_id=stats.get("target_id")
+            action_type = summary.get('action_type')
 
-                    if damage>0 and target_id is not None:
-                        rewards[target_id]+=damage*self.w_victim_damage
-                        target_role=new_state.identities[target_id].role
+            if action_type == 'move' and summary.get('moved', False):
+                rewards[id] += 0.0
+            
+            elif action_type = 'combat' and summary.get('combat_stats'):
+                stats = summary.get('combat_stats')
+                role = new_state.identities[id].role
 
-                        if target_role=="Tank":
-                            rewards[id]+=damage*self.w_boss_dmg_tank
+                if role == 'Dealer':
+                    rewards[id] += stats.get('damage_dealt', 0) * self.dealer_damage
 
-                        elif target_role in ["Dealer","Healer"]:
-                            rewards[id]+=damage*self.w_boss_dmg_squishy
-                            if tank_id is not None and new_state.is_alive(tank_id):
-                                rewards[tank_id]+=damage*self.w_tank_fail_protect
-        
-        #Sparse Rewards
+                elif role == 'Tank':
+                    rewards[id] += stats.get('damage_dealt', 0) * self.tank_damage
+
+                elif role == 'Healer':
+                    rewards[id] += stats.get_healed('healed', 0) * self.healer_effective
+
+                else:
+                    damage = stats.get('damage_dealt', 0)
+
+                    reward[id] += damage*self.boss_damage 
+
+                    blocked_tanks = stats.get('blocked_targets', [])
+                    for tank_id in blocked_tanks:
+                        rewards[tank_id] += self.tank_damage 
+
 
         for id in agent_ids:
             if old_state.is_alive(id):
                 if not new_state.is_alive(id):
-                    if new_state.identities[id].role=="Boss":
+                    if new_state.identities[id].role == 'Boss':
                         for hero_id in agent_ids:
-                            if new_state.identities[hero_id].role != "Boss" and new_state.is_alive(hero_id):
-                                rewards[hero_id] += self.win_bounty
-                        rewards[id]+=self.death_penalty
+                            if new_state.identities[hero_id].role != 'Boss' and new_state.is_alive(hero_id):
+                                rewards[hero_id] += self.win_bounty 
+                        rewards[id] += self.death_penalty 
 
                     else:
-                        rewards[id]+=self.death_penalty
-                        for b_id in agent_ids:
-                            if new_state.identities[b_id].role=="Boss":
-                                rewards[b_id]-=self.death_penalty
-
-        return rewards
+                        rewards[id] += self.death_penalty 
+                        for boss_id in agent_ids:
+                            if new_state.identities[boss_id].role == 'Boss':
+                                rewards[boss_ids] -= self.death_penalty 
+                        
+        return rewards 

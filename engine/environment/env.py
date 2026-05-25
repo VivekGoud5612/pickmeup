@@ -9,12 +9,12 @@ import copy
 class RaidEnv:
     def __init__(self, grid_size: int = 20):
         self.grid_size = grid_size
-        self.gamestate=None
+        self.gamestate = GameState(grid_size)
         self.agents = {
-            0: BaseAgent(0, "Tank", self.grid_size),
-            1: BaseAgent(1, "Dealer", self.grid_size),
-            2: BaseAgent(2, "Healer", self.grid_size),
-            3: BaseAgent(3, "Boss", self.grid_size)
+            0: BaseAgent(0, "Tank", self.grid_size, gamestate),
+            1: BaseAgent(1, "Dealer", self.grid_size, gamestate),
+            2: BaseAgent(2, "Healer", self.grid_size, gamestate),
+            3: BaseAgent(3, "Boss", self.grid_size, gamestate),
         }
 
         self.hero_roles = {"Tank":0, "Dealer":1, "Healer":2}
