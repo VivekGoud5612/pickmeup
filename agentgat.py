@@ -1,135 +1,119 @@
 import torch
-import torch.nn.functional as F
-import torch.optim as optim
-from torch.distributions import Categorical
 import numpy as np
-from typing import List
-from .model import Actor_Critic
+from typing import Dict,Generator,Tuple
 
-lr=3e-4
-gamma=0.99
-lam=0.95
-c1=0.5
-eps_clip=0.2
-K_epoch=4
 
-class Agent:
-    def __init__(self, state_size:int, action_size:int, agent_id:int, role:str):
-        self.state_size=state_size
-        self.action_size=action_size
 
-        self.agent_id=agent_id
-        self.role=role
-        self.c2=0.1
-
-        self.policy=Actor_Critic(state_size,action_size)
-        self.optimizer=optim.Adam(self.policy.parameters(),lr=lr)
-
-        self.memory={
-            "states":[],
-            "actions":[],
-            "log_probs":[],
-            "values":[],
-            "rewards":[],
-            "masks":[],
-            "dones":[],
-        }
-
-    def store_reward(self,reward:float,done:bool):
-        self.memory["rewards"].append(reward)
-        self.memory["dones"].append(done)
-
-    def get_action(self,observation:np.ndarray ,mask:List[int],is_training=True):
-        state_tensor=torch.FloatTensor(observation).unsqueeze(0)
-        mask_tensor=torch.BoolTensor(mask).unsqueeze(0)
-
-        with torch.no_grad():
-            logits,value=self.policy(state_tensor,mask_tensor)
-            if is_training:
-                dist=Categorical(logits=logits)
-                action=dist.sample()
-                log_prob=dist.log_prob(action)
-
-                self.memory["states"].append(observation)
-                self.memory["actions"].append(action.item())
-                self.memory["log_probs"].append(log_prob.item())
-                self.memory["values"].append(value.item())
-                self.memory["masks"].append(mask)
-                
-                return action.item()
-                
-            else:
-                action=torch.argmax(logits,dim=-1)
-                return action.item()
-            
-
-    def learn(self):
-
-        old_states = torch.FloatTensor(np.array(self.memory["states"]))
-        old_actions = torch.LongTensor(self.memory["actions"])
-        old_log_probs = torch.FloatTensor(self.memory["log_probs"])
-        old_values = torch.FloatTensor(self.memory["values"])
-        old_masks = torch.BoolTensor(np.array(self.memory["masks"]))
+class VectorizedRolloutBuffer:
+    def __init__(
+                self, 
+                max_steps : int, 
+                num_envs :int, 
+                num_agents : int,
+                local_obs_dim : int, 
+                global_states_dim : int,
+                actions_dim : int,
+                gamma : float = 0.99, 
+                lam : float = 0.95
+                ):
         
-        rewards = self.memory["rewards"]
-        dones = self.memory["dones"]
+        #Pre allocate memory grids for N multi environments for faster processing
+        self.max_steps = max_steps
+        self.num_envs = num_envs
+        self.num_agents = num_agents
+        self.gamma = gamma
+        self.lam = lam
+        self.pointer = 0  #Pointer to keep track of current step row
 
-        advantages=[]
-        gae=0
+        #Pre allocate memory grids for N multi environments for faster processing
+        self.local_obs = np.zeros((max_steps, num_envs, num_agents, local_obs_dim), dtype = np.float32)
+        self.global_states = np.zeros((max_steps, num_envs, num_agents, global_states_dim), dtype = np.float32)
+        self.actions = np.zeros((max_steps, num_envs, num_agents), dtype = np.int64)
+        self.masks = np.zeros((max_steps, num_envs, num_agents, actions_dim), dtype = np.float32)
+        self.log_probs = np.zeros((max_steps, num_envs, num_agents), dtype = np.float32)
+        self.values = np.zeros((max_steps, num_envs, num_agents), dtype = np.float32)
+        self.rewards = np.zeros((max_steps, num_envs, num_agents), dtype = np.float32)
+        self.active_masks = np.zeros((max_steps, num_envs, num_agents), dtype = np.float32)
 
-        for i in reversed(range(len(rewards))):
+        #Output target array by computed by GAE
+        self.returns = np.zeros((max_steps, num_envs, num_agents), dtype = np.float32)
 
-            if dones[i] or i==len(rewards)-1:
-                next_value=0
-                gae=0
+        self.advantages = np.zeros((max_steps, num_envs, num_agents), dtype = np.float32)
+
+
+    def insert(self, local_obs, global_states, actions, masks, log_probs, values, rewards, active_masks):
+
+        self.local_obs[self.pointer] = np.array(local_obs)
+        self.global_states[self.pointer] = np.array(global_states)
+        self.actions[self.pointer] = np.array(actions)
+        self.masks[self.pointer] = np.array(masks)
+        self.log_probs[self.pointer] = np.array(log_probs)
+        self.values[self.pointer] = np.array(values)
+        self.rewards[self.pointer] = np.array(rewards)
+        self.active_masks[self.pointer] = np.array(active_masks)
+
+        self.pointer += 1
+
+    def compute_gae_and_returns(self, next_values, next_dones):
+
+        last_gae = np.zeros((self.num_envs, self.num_agents), dtype = np.float32)
+
+        for step in reversed(range(self.max_steps)):
+
+            if step == self.max_steps - 1:
+                next_non_terminal = 1.0 - np.expand_dims(next_dones, axis = -1).astype(np.float32)
+                next_val = np.array(next_values, dtype = np.float32)
+
             else:
-                next_value=old_values[i+1]
+                next_non_terminal = np.ones((self.num_envs, self.num_agents), dtype=np.float32)
+                next_val = self.values[step + 1]
 
-            delta=rewards[i]+(gamma*next_value)-old_values[i]
-            gae=delta+(gamma*lam*gae)
+            #TD Error
+            delta = self.rewards[step] + self.gamma * next_non_terminal * next_val - self.values[step]
 
-            advantages.insert(0,gae)
+            #Death masking in GAE Calculation
+            last_gae = delta + self.gamma * self.lam * next_non_terminal * last_gae * self.active_masks[step]
 
-        advantages=torch.FloatTensor(advantages)
-        returns=advantages + old_values
+            self.advantages[step] = last_gae
 
-        advantages=(advantages-advantages.mean())/(advantages.std() +1e-7)
+        self.returns = self.advantages + self.values
 
-        for i in range(K_epoch):
-
-            logits,curr_values=self.policy(old_states,old_masks)
-            dists=Categorical(logits=logits)
-            entropy=dists.entropy()
-            
-            new_log_probs=dists.log_prob(old_actions)
-
-            ratios=torch.exp(new_log_probs-old_log_probs)
-
-            surr1=ratios*advantages
-            surr2=torch.clamp(ratios,1-eps_clip,1+eps_clip)*advantages
-
-            loss_clip=-torch.min(surr1,surr2).mean()
-            loss_vf=F.mse_loss(curr_values.squeeze(-1),returns)
-            loss_e=-entropy.mean()
-
-            final_loss=loss_clip + (c1*loss_vf) + (self.c2*loss_e)
-
-            self.optimizer.zero_grad()
-            final_loss.backward()
-            self.optimizer.step()
-
-        self.c2=max(0.01,self.c2*0.995)
-        self.clear_memory()
+        #Reset pointer after max_steps
+        self.pointer = 0
 
     
-    def clear_memory(self):
-        for key in self.memory.keys():
-            self.memory[key].clear()
+    def generate_agent_mini_batches(self, agent_id : int, mini_batch_size : int = 256) -> Generator[Tuple[np.ndarray, ...], None, None]:
 
-    def save(self, path):
-        torch.save(self.policy.state_dict(), path)
+        total_samples = self.max_steps * self.num_envs
 
+        #Exctract this specific agent's data and flatten out the [max_steps, num_envs] dimensions
+        #get the local_obs,global_states..etc for the agent_id and that array is flattened out using reshape.
+        #reshape(rows,columns) general representation
+        #Here dynamic, reshape(rows,-1) it calculates the total elements/rows and puts in column space.
+        l_obs = self.local_obs[:, :, agent_id].reshape(total_samples, -1)    #Shape ?? 
+        g_states = self.global_states[:, :, agent_id].reshape(total_samples, -1)
 
+        actions = self.actions[:, :, agent_id].reshape(total_samples)
+        masks = self.masks[:, :, agent_id].reshape(total_samples, -1)
+        l_probs = self.log_probs[:, :, agent_id].reshape(total_samples)
+        returns = self.returns[:, :, agent_id].reshape(total_samples)
+        advs = self.advantages[:, :, agent_id].reshape(total_samples)
+        active_masks = self.active_masks[:, :, agent_id].reshape(total_samples)
 
+        #Create a 1D array of indices for exctraction of data randomly
+        indices = np.arange(total_samples)
+        np.random.shuffle(indices)
 
+        for start_idx in (0, total_samples, mini_batch_size):
+            batch_idx = indices[start_idx : start_idx + mini_batch_size]
 
+            yield(
+                l_obs[batch_idx],
+                g_states[batch_idx],
+                actions[batch_idx],
+                masks[batch_idx],
+                l_probs[batch_idx],
+                returns[batch_idx],
+                advs[batch_idx],
+                active_masks[batch_idx]
+            )

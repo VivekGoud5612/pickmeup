@@ -1,203 +1,171 @@
-import torch 
+import os
+from typing import Any, Tuple
+import torch
 import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
 
-class Actor_Critic(nn.Module):
-    def __init__(self,state_size,action_size):
-        super(Actor_Critic,self).__init__()
+# Assuming your models are imported from the file we built earlier
+from engine.agents.ppo.mappo_models import MAPPO_ACTOR, MAPPO_CRITIC
 
-        self.actor=nn.Sequential(
-            nn.Linear(state_size,128),
-            nn.Tanh(),
-            nn.Linear(128,128),
-            nn.Tanh(),
-            nn.Linear(128,action_size),
-        )
 
-        self.critic=nn.Sequential(
-            nn.Linear(state_size,128),
-            nn.Tanh(),
-            nn.Linear(128,128),
-            nn.Tanh(),
-            nn.Linear(128,1),
-        )
+class Agent:
+    def __init__(
+        self, 
+        obs_dim: int, 
+        action_dim: int, 
+        agent_id: int, 
+        role: Any, 
+        global_obs_dim: int = 54, 
+        lr: float = 3e-4
+    ):
+        """
+        The Master Orchestrator for a single multi-agent entity.
+        Manages action inference, value estimation, and optimization steps.
+        """
+        self.agent_id = agent_id
+        self.role = role
 
-    def forward(self,state:torch.Tensor,mask:torch.Tensor):
+        # 1. Instantiate Core Brain Components
+        # Each agent gets its own local policy (Actor) and centralized value tracker (Critic)
+        self.actor = MAPPO_ACTOR(obs_dim, action_dim)
+        self.critic = MAPPO_CRITIC(global_obs_dim)
 
-        logits=self.actor(state)
-        value=self.critic(state)
+        # Production Hook: Satisfies upstream framework patterns that look for self.policy
+        self.policy = self.actor 
 
-        if mask is not None:
-            logits=logits.masked_fill(~mask,float('-inf'))
+        # 2. Setup Separate Optimizers
+        # We enforce eps=1e-5 to provide a safety buffer against floating-point zero errors
+        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=lr, eps=1e-5)
+        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=lr, eps=1e-5)
 
-        return logits,value
+        # 3. Attach the Dynamic Statistics Tracker
+        # Automatically keeps our training targets perfectly scaled between -1.0 and 1.0
+        self.value_normalizer = ValueNormalizer()
 
-    def calculate_reward(self,agent_id:int,summary:Dict)->float:
-        reward=-0.01
-        ident =self.gamestate.identities[agent_id]
-        role=ident.role
+        # 4. Ephemeral Trajectory Memories
+        # Caches the immediate mathematical steps during environment execution 
+        # so they can be neatly scraped by your global data logging system downstream.
+        self.last_log_prob = 0.0
+        self.last_value = 0.0
 
-        my_hp_ratio=self.gamestate.hp[agent_id]/ident.stats.max_hp
-        boss_hp_ratio=self.gamestate.hp[self.boss_id]/self.gamestate.identities[self.boss_id].stats.max_hp
+    def get_action(self, observation: list, action_mask: list, is_training: bool = True) -> int:
+        """
+        Processes local visions and returns a single, flattened discrete integer action choice.
+        """
+        # Convert raw lists into PyTorch execution vectors, adding a batch dimension [1, dim]
+        obs_tensor = torch.FloatTensor(observation).unsqueeze(0)
+        mask_tensor = torch.FloatTensor(action_mask).unsqueeze(0)
 
-        if summary.get("action_type") == "move" and summary.get("moved") is True:
-            reward += 0.02
-
-        combat=summary.get("combat_stats") or{}
-        target_id=combat.get("target_id")
-
-        if role!="Boss" and combat.get("damage_dealt",0)>0:
-            shared_team_reward=(combat["damage_dealt"] * 0.1)/10.0
-            reward += shared_team_reward
-
-        if combat:
-
-            if role=="Dealer":
-                dmg=combat.get("damage_dealt",0)
-
-                multiplier=2.0 if boss_hp_ratio<0.3 else 1.0
-                reward+=((dmg*multiplier*0.6))/10.0
-
-            elif role=="Tank":
-                if combat.get("blocked"):
-
-                    reward+=(8.0 if boss_hp_ratio>0.5 else 4.0)/10.0
-
-                reward+=((combat.get("damage_dealt",0)*0.3)/10.0)
-
-            elif role=="Healer":
-                heal_amt=combat.get("healed",0)
-
-                if target_id is not None and heal_amt>0:
-                    t_hp_ratio_before=combat.get("target_hp_ratio_before",1.0)
-
-                    if t_hp_ratio_before<0.2:
-                        reward+=2.0
-                    else:
-                        reward+=((heal_amt*0.8)/10.0)
-
-                    if my_hp_ratio<0.25 and target_id!=agent_id:
-                        reward-=0.5
+        self.actor.eval() # Switch network context to freeze Batch Normalization/Dropout steps
+        with torch.no_grad():
+            # Generate the safe probability distribution using our zero-overhead action masker
+            distribution = self.actor(obs_tensor, mask_tensor)
             
-            elif role=="Boss":
-                dmg=combat.get("damage_dealt",0)
+            if is_training:
+                # Explore safely within the boundaries of allowed actions
+                action = distribution.sample()
+            else:
+                # Play perfectly: pick the absolute highest probability option
+                action = torch.argmax(distribution.probs, dim=-1)
+                
+            log_prob = distribution.log_prob(action)
 
-                if target_id is not None:
-                    t_role=self.gamestate.identities[target_id].role
-                    t_hp_ratio_before=combat.get("target_hp_ratio_before",1.0)
+        self.actor.train() # Restore network context back to training mode
 
-                    boss_reward=dmg*1.0
+        # Cache step signatures into local memory if this is an active training track
+        if is_training:
+            self.last_log_prob = log_prob.item()
 
-                    if t_role in ["Healer","Dealer"]:
-                        boss_reward*=1.5
+        return int(action.item())
 
-                    if t_hp_ratio_before<0.25:
-                        boss_reward*=2.0
-                    
-                    reward+=(boss_reward/10.0)
-
-                    if not self.gamestate.is_alive(target_id):
-                        reward+=5.0
+    def evaluate_global_state(self, global_state: list) -> float:
+        """
+        Queries the Centralized Critic to grade the overall security score of the board layout.
+        """
+        state_tensor = torch.FloatTensor(global_state).unsqueeze(0)
         
-        return float(reward)
-
-
-
-
-        from dataclasses import dataclass,field
-from enum import Enum
-from typing import Dict,Any
-
-
-class AgentRole(Enum):
-    TANK = "Tank"
-    DEALER = "Dealer"
-    HEALER = "Healer"
-    BOSS = "Boss"
-
-
-@dataclass(frozen=True)
-class Skill:
-    power : int
-    min_range : int
-    max_range : int
-    cooldown : int
-
-@dataclass
-class Stats:
-    hp : int
-    max_hp : int
-    skills : Dict[str,Skill]
-
-@dataclass
-class AgentIdentityFormat:
-    id : int
-    role: AgentRole
-    stats : Stats
-    action_space_size : int
-
-
-class AgentIdentity:
-
-    ROLE_PRESETS : Dict[AgentRole , Dict[str , Any]] = {
-        AgentRole.TANK : {
-            "hp" : 150,
-            "max_hp" : 150,
-            "action_space_size" : 7,
-            "skills" : {
-                "basic_attack" : Skill(power = 10, min_range = 1, max_range = 1, cooldown = 0),
-                "block" : Skill(power = 0, min_range = 0 ,max_range = 0, cooldown = 2),
-            }
-        },
-
-        AgentRole.DEALER : {
-            "hp" : 80,
-            "max_hp" : 80,
-            "action_space_size" : 7,
-            "skills": {
-                "basic_attack" : Skill(power = 15, min_range = 1, max_range = 2, cooldown = 0),
-                "special" : Skill(power = 25, min_range = 2, max_range = 4, cooldown = 4),
-            }
-        },
-
-        AgentRole.HEALER : {
-            "hp" : 70,
-            "max_hp" : 70,
-            "action_space_size" : 7,
-            "skills": {
-                "basic_heal" : Skill(power = -10, min_range = 0, max_range = 2, cooldown = 2),
-                "all_heal" : Skill(power = -30, min_range = 1, max_range = 4, cooldown = 10),
-            }
-        },
-
-        AgentRole.BOSS : {
-            "hp" : 1000,
-            "max_hp" : 1000,
-            "action_space_size" : 7,
-            "skills": {
-                "basic_attack" : Skill(power = 20, min_range = 1, max_range = 2, cooldown = 3),
-                "aoe" : Skill(power = 40, min_range = 1, max_range = 4, cooldown = 15),
-            }
-        },
-    }
-
-    @staticmethod
-    def create_identity(agent_id : int, role : AgentRole) -> AgentIdentityFormat:
-
-        if role not in AgentIdentity.ROLE_PRESETS:
-            raise ValueError(f"Role {role} is not registered in ROLE_PRESETS.")
+        self.critic.eval()
+        with torch.no_grad():
+            value = self.critic(state_tensor)
+        self.critic.train()
         
-        data = AgentIdentity.ROLE_PRESETS[role]
+        # Cache and return the raw un-normalized value score
+        self.last_value = value.item()
+        return self.last_value
 
-        stats = Stats(
-            hp = data["hp"],
-            max_hp = data["max_hp"],
-            skills = data["skills"],
-        )
+    def train_step(
+        self, 
+        local_obs: list, 
+        global_states: list, 
+        actions: list, 
+        masks: list, 
+        old_log_probs: list, 
+        returns: list, 
+        active_masks: list, 
+        clip_epsilon: float = 0.2
+    ) -> Tuple[float, float]:
+        """
+        Executes parallelized MAPPO optimizations using advanced Death Masking and Huber Loss.
+        """
+        # Convert incoming historic batches into full parallelized multi-dimensional GPU/CPU tensors
+        local_obs_t = torch.FloatTensor(local_obs)
+        global_states_t = torch.FloatTensor(global_states)
+        actions_t = torch.LongTensor(actions)
+        masks_t = torch.FloatTensor(masks)
+        old_log_probs_t = torch.FloatTensor(old_log_probs)
+        returns_t = torch.FloatTensor(returns)
+        active_masks_t = torch.FloatTensor(active_masks) # Shape: [Batch], values: 1.0 = alive, 0.0 = dead
 
-        return AgentIdentityFormat(
-            id = agent_id,
-            role = role,
-            stats = stats,
-            action_space_size = data["action_space_size"]
-        )
+        # --- STEP 1: COMPUTE RUNTIME VALUE STATISTICS ---
+        # Update our Welford normalizer matrices using the absolute truth returns from this batch
+        self.value_normalizer.update(returns_t)
+        normalized_returns = self.value_normalizer.normalize(returns_t)
+
+        # --- STEP 2: OPTIMIZE CENTRALIZED CRITIC ---
+        predicted_values = self.critic(global_states_t).squeeze(-1)
         
+        # Turn the Critic's tiny scaled outputs back into real-world scores to calculate true advantage
+        unnormalized_values = self.value_normalizer.denormalize(predicted_values)
+        advantages = returns_t - unnormalized_values.detach()
+        # Standardize the advantage vector to normalize variance across the team space
+        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-5)
+
+        # Compute stable Huber Loss element-wise instead of crude Mean Squared Error
+        critic_huber = F.huber_loss(predicted_values, normalized_returns, reduction='none')
+        
+        # DEATH MASKING: Multiply element-wise by active_masks. If an agent was dead, its loss becomes 0.
+        # We divide by the count of living frames to prevent dead weight from diluting gradient strength.
+        masked_critic_loss = (critic_huber * active_masks_t).sum() / torch.clamp(active_masks_t.sum(), min=1.0)
+
+        # Execute dedicated Critic Backpropagation
+        self.critic_optimizer.zero_grad()
+        masked_critic_loss.backward()
+        nn.utils.clip_grad_norm_(self.critic.parameters(), max_norm=10.0) # Stop exploding gradients
+        self.critic_optimizer.step()
+
+        # --- STEP 3: OPTIMIZE DECENTRALIZED ACTOR ---
+        distribution = self.actor(local_obs_t, masks_t)
+        new_log_probs = distribution.log_prob(actions_t)
+
+        # PPO Clipped Surrogate Objective Calculations
+        ratios = torch.exp(new_log_probs - old_log_probs_t)
+        surr1 = ratios * advantages
+        surr2 = torch.clamp(ratios, 1.0 - clip_epsilon, 1.0 + clip_epsilon) * advantages
+        raw_actor_loss = -torch.min(surr1, surr2)
+        
+        # DEATH MASKING: Ensure moves chosen by dead/inactive entities don't alter the policy weights
+        masked_actor_loss = (raw_actor_loss * active_masks_t).sum() / torch.clamp(active_masks_t.sum(), min=1.0)
+
+        # Execute dedicated Actor Backpropagation
+        self.actor_optimizer.zero_grad()
+        masked_actor_loss.backward()
+        nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=10.0)
+        self.actor_optimizer.step()
+
+        # Return clean loss telemetry integers for tracking in your logging dashboards
+        return masked_actor_loss.item(), masked_critic_loss.item()
+
+    def save(self, model_path: str):
+        """Dumps Actor network parameters cleanly to disk checkpoints."""
+        torch.save(self.actor.state_dict(), model_path)

@@ -104,7 +104,7 @@ class AgentIdentity:
             stats = Stats(
                 max_hp = data['max_hp'],
                 attributes = data['attributes'],
-                skills = data['skills']
+                skills = data['skills'],
             ),
         )
 
