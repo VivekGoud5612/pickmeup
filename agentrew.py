@@ -1,190 +1,177 @@
-from typing import Dict,Tuple,Any
-import math
+import numpy as np
+from typing import Dict, Tuple, Any
+from engine.actions.action_handler import ActionTypes, AgentRole, Team
+from engine.environment.state_ops import StateOperations as stateops
+from engine.environment.state import GameState
 
+class RewardCalculator:
+    def __init__(self, gamma: float = 0.80):
+        self.gamma = gamma
 
-class Reward_Calculator:
-    def _init_(self,):
-        self.gamma=0.99
-        
-        self.w_dealer_dmg = 0.5
-        self.w_healer_eff = 0.6
-        self.w_tank_block = 0.9
-
-        self.w_tank_dmg=0.2
-        self.w_boss_dmg = 0.7
-
+        # Base Environment Penalties/Bounties
         self.time_step_penalty = -0.1
         self.invalid_action_penalty = -0.1
         self.win_bounty = 100.0
         self.death_penalty = -50.0
 
-    
-    def calculate_potential(self,state):
-        hero_potential=0
-        total_hero_hp=0
+        # Hardcoded IDs matching your team structure
+        self.tank_id = 0
+        self.dealer_id = 1
+        self.healer_id = 2
+        self.boss_id = 3
 
-        for u_id,team in state.teams.items():
-            if team=="Heroes" and state.is_alive(u_id):
-                total_hero_hp+=state.hp[u_id]
+    # =====================================================================
+    # HANDCRAFTED SUB-SCORES
+    # =====================================================================
+    def _hero_hp_score(self, state: GameState) -> float:
+        heroes_mask = state.team_masks[Team.HEROES]
+        if not np.any(state.hp[heroes_mask] > 0):
+            return 0.0
+        return float(np.mean(state.hp[heroes_mask] / state.max_hp[heroes_mask]))
+
+    def _boss_hp_score(self, state: GameState) -> float:
+        return float(state.hp[self.boss_id] / state.max_hp[self.boss_id])
+
+    def _stamina_score(self, state: GameState) -> float:
+        return float(np.mean(state.stamina / state.max_stamina))
+
+    def _formation_score(self, state: GameState) -> float:
+        """Measures how tightly grouped the living heroes are."""
+        heroes_mask = state.team_masks[Team.HEROES] & (state.hp > 0)
+        active_positions = state.positions[heroes_mask]
+        if len(active_positions) <= 1:
+            return 0.0
+        
+        centroid = np.mean(active_positions, axis=0)
+        distances = np.sum(np.abs(active_positions - centroid), axis=1)
+        return -float(np.mean(distances)) # Closer group = closer to 0 (higher potential)
+
+    def _dealer_position_score(self, state: GameState) -> float:
+        """Dealer wants to be exactly 2-3 tiles away from the Boss."""
+        if state.hp[self.dealer_id] <= 0 or state.hp[self.boss_id] <= 0:
+            return 0.0
+        dist = stateops.get_distance(state, self.dealer_id, self.boss_id)
+        return 1.0 if (2 <= dist <= 3) else -float(abs(dist - 2.5))
+
+    def _healer_safety_score(self, state: GameState) -> float:
+        """Healer wants distance from the Boss, proximity to the Tank."""
+        if state.hp[self.healer_id] <= 0:
+            return 0.0
+        score = 0.0
+        if state.hp[self.boss_id] > 0:
+            score += stateops.get_distance(state, self.healer_id, self.boss_id) * 0.5
+        if state.hp[self.tank_id] > 0:
+            score -= stateops.get_distance(state, self.healer_id, self.tank_id) * 0.5
+        return float(score)
+
+    def _tank_protection_score(self, state: GameState) -> float:
+        """Tank gets points for standing between the Boss and the squishies."""
+        if state.hp[self.tank_id] <= 0 or state.hp[self.boss_id] <= 0:
+            return 0.0
+        
+        score = 0.0
+        tank_to_boss = stateops.get_distance(state, self.tank_id, self.boss_id)
+        
+        for squishy_id in [self.dealer_id, self.healer_id]:
+            if state.hp[squishy_id] > 0:
+                squishy_to_boss = stateops.get_distance(state, squishy_id, self.boss_id)
+                if tank_to_boss < squishy_to_boss:
+                    score += 2.0
+        return float(score)
+
+    def _get_handcrafted_potential(self, state: GameState) -> Tuple[float, float]:
+        """Compiles sub-scores into separate potentials for both teams."""
+        alive_heroes = int(np.sum((state.team_masks[Team.HEROES]) & (state.hp > 0)))
+        
+        # Base structural values
+        hero_hp = self._hero_hp_score(state)
+        boss_hp_penalty = -self._boss_hp_score(state)
+        formation = self._formation_score(state)
+        stamina = self._stamina_score(state)
+
+        # Tactical positions
+        dealer_pos = self._dealer_position_score(state)
+        healer_safe = self._healer_safety_score(state)
+        tank_prot = self._tank_protection_score(state)
+
+        # Combine matching your blueprint
+        hero_pot = (hero_hp * 10.0) + (alive_heroes * 2.0) + (formation * 0.5) + \
+                   (stamina * 0.5) + (boss_hp_penalty * 10.0) + \
+                   dealer_pos + healer_safe + tank_prot
+
+        # Boss potential is inverse to hero performance
+        boss_pot = (self._boss_hp_score(state) * 10.0) - (hero_hp * 10.0)
+
+        return hero_pot, boss_pot
+
+    # =====================================================================
+    # MASTER CALCULATOR WITH PHASE ANNEALING
+    # =====================================================================
+    def calculate_rewards(self, 
+                          old_state: GameState, 
+                          new_state: GameState, 
+                          processed_mask: np.ndarray,
+                          phase: int, 
+                          old_values: np.ndarray, 
+                          new_values: np.ndarray) -> np.ndarray:
+        """
+        Calculates rewards for all 4 agents based on your 4-Phase system schedule.
+        - processed_mask: boolean array showing if the agent executed a valid action.
+        - old_values / new_values: Critic predictions for each agent [shape: (4,)]
+        """
+        num_agents = new_state.num_agents
+        rewards = np.zeros(num_agents, dtype=np.float32)
+
+        # 1. Determine Alpha based on your Phase parameters
+        if phase == 1:   alpha = 0.0
+        elif phase == 2: alpha = 0.2
+        elif phase == 3: alpha = 0.5
+        else:            alpha = 1.0 # Phase 4: Pure Critic Value
+
+        # 2. Get Handcrafted Potentials
+        old_hero_hand, old_boss_hand = self._get_handcrafted_potential(old_state)
+        new_hero_hand, new_boss_hand = self._get_handcrafted_potential(new_state)
+
+        # 3. Blend Potentials per Agent
+        # Each agent evaluates their team's perspective combined with their personal critic value
+        for idx in range(num_agents):
+            is_boss = (new_state.roles[idx] == AgentRole.BOSS)
+            
+            # Extract relevant handcrafted block
+            old_hand = old_boss_hand if is_boss else old_hero_hand
+            new_hand = new_boss_hand if is_boss else new_hero_hand
+
+            # Apply your blending formula
+            old_phi = ((1.0 - alpha) * old_hand) + (alpha * old_values[idx])
+            new_phi = ((1.0 - alpha) * new_hand) + (alpha * new_values[idx])
+
+            # Shaped PBRS reward calculation
+            rewards[idx] += (self.gamma * new_phi) - old_phi
+
+        # 4. Step Penalties & Invalid Move Interceptions
+        for idx in range(num_agents):
+            if new_state.hp[idx] > 0:
+                rewards[idx] += self.time_step_penalty
+                if not processed_mask[idx]: # If action sequencer flagged them as invalid
+                    rewards[idx] += self.invalid_action_penalty
+
+        # 5. Terminal Breakdowns (Win Bounties & Death Penalties)
+        heroes_mask = new_state.team_masks[Team.HEROES]
+        boss_id = 3
+
+        for idx in range(num_agents):
+            was_alive = old_state.hp[idx] > 0
+            is_alive = new_state.hp[idx] > 0
+
+            if was_alive and not is_alive:
+                rewards[idx] += self.death_penalty
                 
-                if state.identities[u_id].role!="Healer" and state.get_enemies(u_id):
-                    hero_potential-=state.distance(u_id,state.get_enemies(u_id)[0])
-        
-        hero_potential+=total_hero_hp
-
-        boss_potential=0
-
-        for u_id,team in state.teams.items():
-            if team=="Boss" and state.is_alive(u_id):
-                boss_potential+=state.hp[u_id]
-            
-        boss_potential-=total_hero_hp
-
-        return hero_potential,boss_potential
-    
-    def calculate_reward(self, old_state, new_state, summaries : Dict[int, Dict[str, Any]]):
-        
-        agent_ids=list(new_state.identities.keys())
-        rewards={agent_id:0.0 for agent_id in agent_ids}
-
-
-        #PBRS + Step Penalty:
-
-        old_hero_phi , old_boss_phi =self.calculate_potential(old_state)
-        new_hero_phi , new_boss_phi =self.calculate_potential(new_state)
-
-        team_reward = (self.gamma * new_hero_phi) - old_hero_phi
-        boss_reward = (self.gamma * new_boss_phi) - old_boss_phi
-
-        for id in agent_ids:
-            if new_state.is_alive(id):
-                rewards[id] += self.time_step_penalty
-                if new_state.identities[id].role=="Boss":
-                    rewards[id]+=boss_reward*0.1
+                if idx == boss_id:
+                    # Boss died! Living heroes claim the match bounty
+                    for hero_id in np.where(heroes_mask & (new_state.hp > 0))[0]:
+                        rewards[hero_id] += self.win_bounty
                 else:
-                    rewards[id]+=team_reward*0.1
-        
-
-        #Credit Assignment:
-
-        tank_id = next((u for u, i in new_state.identities.items() if i.role == "Tank"), None)
-
-        for id,summary in summaries.items():
-
-            if not new_state.is_alive(id):
-                continue
-
-            if summary.get("invalid",False):
-                rewards[id]+=self.invalid_action_penalty
-                continue
-
-            action_type=summary.get("action_type")
-
-            if action_type=="move" and summary.get("moved",False):
-                rewards[id]+=0.00
-            
-            elif action_type=="combat" and summary.get("combat_stats"):
-                stats=summary.get("combat_stats")
-                role=new_state.identities[id].role
-
-                if role=="Dealer":
-                    rewards[id]+=stats.get("damage_dealt",0)*self.w_dealer_dmg
-                elif role=="Healer":
-                    rewards[id]+=stats.get("healed",0)*self.w_healer_eff
-                elif role=="Tank":
-                    if stats.get("damage_dealt",False):
-                        rewards[id]+=stats.get("damage_dealt",0)*self.w_tank_dmg
-                elif role=="Boss":
-                    damage=stats.get("damage_dealt",0)
-
-                    rewards[id]+=damage*self.w_boss_dmg
-                            
-                    blocked_tanks=stats.get("blocked_targets") or []
-                    for t_id in blocked_tanks:
-                        rewards[t_id]+=self.w_tank_block
-                                                            
-        
-        #Sparse Rewards
-
-        for id in agent_ids:
-            if old_state.is_alive(id):
-                if not new_state.is_alive(id):
-                    if new_state.identities[id].role=="Boss":
-                        for hero_id in agent_ids:
-                            if new_state.identities[hero_id].role != "Boss" and new_state.is_alive(hero_id):
-                                rewards[hero_id] += self.win_bounty
-                        rewards[id]+=self.death_penalty
-
-                    else:
-                        rewards[id]+=self.death_penalty
-                        for b_id in agent_ids:
-                            if new_state.identities[b_id].role=="Boss":
-                                rewards[b_id]-=self.death_penalty
+                    # Hero died! Give the Boss their bounty
+                    rewards[boss_id] -= self.death_penalty
 
         return rewards
-
-
-
-
-
-
-
-
-
-import torch
-
-
-
-
-
-
-class Value_Normalizer:
-    def __init__(self, epsilon : float = 1e-5):
-
-        self.epsilon = epsilon
-
-        self.running_mean = 0.0
-        self.running_var = 1.0
-
-        self.count = epsilon   #Global count for step rewards. Initialized to epsilon,to prevent zero division on first update
-
-
-    def update(self, returns : torch.Tensor) -> None:
-
-        batch_mean = torch.mean(returns).item()
-        batch_var = torch.var(returns).item()
-        batch_count = returns.numel()
-
-        total_count = self.count + batch_count
-
-        # Difference between this batch's mean and old historical mean
-        delta = batch_mean - self.running_mean
-
-        # Shift the running mean towards the new batch mean
-        self.running_mean += delta * (batch_count/total_count)
-
-        # Welford's and Chad's Algorithm
-        # For running variance we calculate the sum of differences for both old data(ma) and new batch(mb).
-        # Then we combine them using a correction factor for how much the mean just shifted (delta**2)
-        m_a = self.running_var * self.count
-        m_b = batch_var * batch_count
-        M2 = m_a + m_b + (delta ** 2) * (self.count * batch_count)/total_count
-
-        # Convert M2 to running variance 
-        self.running_var = M2 / total_count
-
-        self.count = total_count
-
-
-    def Normalize(self, returns : torch.Tensor) -> torch.Tensor:
-        # Standard deviation is square root of Variance
-        std = (self.running_var + self.epsilon) ** 0.5
-
-        return (returns - self.running_mean) / std
-    
-
-    def Denormalize(self, values : torch.Tensor) -> torch.Tensor:
-
-        std = (self.running_var + self.epsilon) ** 0.5
-
-        return (values * std) + self.running_mean

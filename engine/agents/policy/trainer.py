@@ -87,13 +87,13 @@ class Trainer:
     def get_action(self, obs_tensor : torch.Tensor, mask_tensor : torch.Tensor, is_training : bool = True) -> Tuple[torch.Tensor, torch.Tensor]:  ## Batched tensors here... of shape (num_envs, obs_dim) or (num_envs, mask_dim)
 
         self.actor.eval()   ## Switches network to evaluation mode, where it freezes BatchNorm or Dropout layers.
-        distribution = self.actor(obs_tensor, mask_tensor)   ## Distribution of size (num_envs, num_actions)
+        distribution = self.actor(obs_tensor, mask_tensor)   ## Distribution of size (num_envs, num_actions) .. As we separate out actions, observations and masks...
 
         if is_training:
             actions = distribution.sample()  # returns tensors where each environment has one action so shape - (num_envs, 1)
 
         else:
-            actions = torch.argmax(distribution.probs, dim = 1)   ## actions.shape = (num_envs, num_actions), and dim = 1 -> transform actions dim
+            actions = torch.argmax(distribution.probs, dim = 1)   ## actions.shape = (num_envs, ), and dim = 1 -> transform actions dim and takes the maximum from that 8 space action dim for each agent. As we take observation, and mask for each agent the actual output of action.shape is (num_envs, )
 
         log_probs = distribution.log_prob(actions)
         self.actor.train()
