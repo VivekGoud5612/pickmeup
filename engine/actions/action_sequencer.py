@@ -21,6 +21,7 @@ class ActionSequencer:
         state.damage_reduction_by_nullification.fill(0.0)
         state.stamina_spent.fill(0.0)
         state.damage_taken.fill(0.0)
+        state.exploration_bonus_triggered.fill(0.0)  ## for agents which went to new state , give some sort of a bonus
 
         ## mutatable_action_copy = np.array([action_type.value for action_type in actions]) ## Size same as actions which is (num_angents,). And action_type.value would give the necessary integer..
         
@@ -131,6 +132,7 @@ class ActionSequencer:
 
         if stateops.is_unique(state, agent_id, new_pos):
             stateops.update_unique_tiles(state, agent_id, new_pos)
+            state.exploration_bonus_triggered[agent_id] = 1.0  ## To tell reward engine to Reward teh agent for exploration...
         
 
             

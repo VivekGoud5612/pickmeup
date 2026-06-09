@@ -9,18 +9,21 @@ class RolloutBuffer:
         num_envs : int,
         num_agents : int,
         obs_shape : Tuple[int, ...],
+        local_role_id_shape : Tuple[int, ...],
         global_state_shape : Tuple[int, ...],
         action_shape : Tuple[int, ...],
         device : torch.device
     ):
  
         self.num_steps = num_steps
-        self.num_envs = num_ens 
+        self.num_envs = num_envs 
         self.num_agents = num_agents
         self.device = device 
         self.pointer = 0
+        self.global_ids = torch.Tensor([AgentRole.TANK, AgentRole.DEALER, AgentRole.HEALER, AgentRole.BOSS], dtype = torch.long)   ## This way we can just broadcast the same global ID tensor to all the items of the batch..
 
         self.obs = np.zeros((num_steps, num_envs, num_agents) + obs_shape, dtype = np.float32)
+        self.local_role_ids = np.zeros((num_steps, num_envs, num_agents) + local_role_id_shape, dtype = np.int32)
         self.state = np.zeros((num_steps, num_envs) + global_state_shape, dtype = np.float32)
         self.actions = np.zeros((num_steps, num_envs, num_agents) + action_shape, dtype = np.float32)
         self.rewards = np.zeros((num_steps, num_envs, num_agents), dtype = np.float32)
@@ -31,12 +34,13 @@ class RolloutBuffer:
 
         self.dones = np.zeros((num_steps, num_envs, num_agents), dtype = np.float32)
         self.active_masks = np.zeros((num_steps, num_envs, num_agents), dtype = np.float32)
-        self.action_masks = np.zeros((num_steps, num_ens, num_agents) + action_shape, dtype = np.float32)
+        self.action_masks = np.zeros((num_steps, num_envs, num_agents) + action_shape, dtype = np.float32)
 
     def store(
         self,
         local_obs : np.ndarray,
-        global_states : np.ndarray,
+        local_ids : np.ndarray,
+        global_state : np.ndarray,
         actions : np.ndarray,
         log_probs : np.ndarray,
         rewards : np.ndarray,
@@ -49,7 +53,8 @@ class RolloutBuffer:
         assert self.pointer < self.num_steps, 'Rollout buffer overflow. Call compute_returns() and clear.'
 
         self.obs[self.pointer] = local_obs
-        self.global_states[self.pointer] = global_states
+        self.local_role_ids[self.pointer] = local_ids
+        self.state[self.pointer] = global_state
         self.actions[self.pointer] = actions
         self.log_probs[self.pointer] = log_probs
         self.rewards[self.pointer] = rewards
@@ -60,34 +65,32 @@ class RolloutBuffer:
 
         self.pointer += 1
 
-    ##  Actually what I wanted to do.. was keep one state, one value for each environemtn. ANd returns and advantages are different for each agent as both are dependent on step reward right? And each agent has different reward. So lets just change value and expand that. And in gae calculation, I need to check value in TD error. So I need to expand values there as well... 
+    ##  Actually what I wanted to do.. was keep one state, one value for each environment. ANd returns and advantages are different for each agent as both are dependent on step reward right? And each agent has different reward. So lets just change value and expand that. And in gae calculation, I need to check value in TD error. So I need to expand values there as well... 
     def compute_returns_and_advantages(self, next_values : np.ndarray, next_dones : np.ndarray, gamma : float = 0.99, gae_lambda = 0.95):
 
-        last_gae = np.zeros((self.num_envs, self.num_agents), dtype = np.float32)
+        last_gae = np.zeros((self.num_envs, self.num_agents), dtype = np.float32)  # No need for step dim as we calculate last_gae of delta for each step
 
-        for step in reversed(range(self.num_steps)):
+        for step in reversed(range(self.num_steps)):   # Next value of size (batch_size, 1).. hoping num_steps = batch_size... but we should pass next value and done to be of size (num_envs).. lets see about this in 
             
-            current_expanded_value = np.expand_dims(self.values[step], axis = 1)
+            current_expanded_value = np.expand_dims(self.values[step], axis = 1)   # Expand the current value of shape (num_envs)  -> (num_envs, 1)
 
-            if step == self.num_steps - 1: ## Check if this is teh last step. There is no next value so we calculate that and send it as argumetns to this function.
+            if step == self.num_steps - 1: ## Check if this is the last step. There is no next value so we calculate that and send it as argumetns to this function.
                 next_non_terminal = (1.0 - next_dones.astype(np.float32))    
-
-                next_value = np.expand_dims(next_values, axis = 1) 
+                next_value = np.expand_dims(next_values, axis = 1) ## Shape (num_envs, 1)
 
             else:
                 next_non_terminal = (1.0 - self.dones[step + 1].astype(np.float32))  #Terminal condition for each env. Then we multiply it with the future term becasue if tha this 0, then there is no meaning calculate the future value
+                next_value = np.expand_dims(self.values[step + 1], axis = 1)  #Shape (num_envs, 1)
 
-                next_value = np.expand_dims(self.values[step + 1], axis = 1)
 
-
-            delta = self.rewards[step] + gamma * next_value * next_non_terminal - current_expanded_value
-            delta = delta * self.active_masks[step]
+            delta = self.rewards[step] + gamma * next_value * next_non_terminal - current_expanded_value  # Shape (num_envs, num_agents), current expanded value gets broadcasted. As well as next value (from num_envs, 1 -> num_envs, agents)
+            #delta = delta * self.active_masks[step]  Let dead agents also write something, although we close the loss in actor update
     
-            last_gae = delta + gamma * gae_lambda * next_non_terminal * last_gae * self.active_masks[step]
+            last_gae = delta + gamma * gae_lambda * next_non_terminal * last_gae #* self.active_masks[step] #shape (num_envs, num_agents)
             self.advantages[step] = last_gae 
 
-        expanded_values = np.expand_dims(self.value, axis = 2)   # converts [num_envs,] -> [num_envs, 1]  So np automatically broadcasts the same from [num_envs, 1] -> [num_envs, num_agents]. Because numpy automatically broadcasts or stretches with operations like (+, -, *).
-        self.returns = self.advantages + expanded_values  # Need to expand self.values before calculating returns 
+        expanded_values = np.expand_dims(self.values, axis = 2)   # converts [num_envs,] -> [num_envs, 1]  So np automatically broadcasts the same from [num_envs, 1] -> [num_envs, num_agents]. Because numpy automatically broadcasts or stretches with operations like (+, -, *).
+        self.returns = self.advantages + expanded_values  # Need to expand self.values before calculating returns , #Shape (num_envs, num_agents)  
 
         advantages_mean = self.advantages.mean()
         advantages_std = self.advantages.std()
@@ -108,17 +111,20 @@ class RolloutBuffer:
         expanded_values = np.expand_dims(self.values, axis = 2)
         repeated_values = np.repeat(expanded_values, self.num_agents, axis = 2)  # But auto broadcasts does not work for reshape operations..
 
-        state_tensor = torch.as_tensor(repeated_state.reshape(flat_size, *self.state.shape[2:]), device = self.device)
+        state_tensor = torch.as_tensor(repeated_state.reshape(flat_size, *self.state.shape[2:]), device = self.device)   # * is the unpacking operator, we unpack that tensor.. more detailed below
         values_tensor = torch.as_tensor(repeated_values.reshape(flat_size), device = self.device)   # *(something) is used for unpacking that tuple into comma seperated values. This way I can unpack state dimension (global state dimension to a comma seperated dim value).
         returns_tensor = torch.as_tensor(self.returns.reshape(flat_size), device = self.device)
+
+        expanded_global_ids = self.global_ids.unsqueeze(0).expand(flat_size, -1)   ## Here we are simply adding a new dim at 0th index and using expand to stretch the tensor along that new dimension with batch size. The -1 is so that the last dim is safe and letting it be whatever it was..
 
         for start_idx in range(0, flat_size, batch_size):
             end_idx = start_idx + batch_size 
             mb_indices = indices[start_idx : end_idx]
-
+        
             yield {
 
-                "global_state": state_tensor[mb_indices], 
+                "global_state": state_tensor[mb_indices],
+                "global_ids" : expanded_global_ids[mb_indices],
                 "values": values_tensor[mb_indices],
                 "returns": returns_tensor[mb_indices],
             }
@@ -132,17 +138,19 @@ class RolloutBuffer:
         np.random.shuffle(indices)
 
         agent_obs = self.obs[:, :, agent_id]
+        agent_role_ids = self.local_role_ids[:, :, agent_id]
         agent_actions = self.actions[:, :, agent_id]
         agent_log_probs = self.log_probs[:, :, agent_id]
         agent_advantages = self.advantages[:, :, agent_id]
         agent_action_masks = self.action_masks[:, :, agent_id]
         agent_active_masks = self.active_masks[:, :, agent_id]
 
-        obs_tensor = torch.as_tensor(agent_obs.reshape(flat_envs, *agent_obs.shape[2:]), device=self.device)
-        actions_tensor = torch.as_tensor(agent_actions.reshape(flat_envs, *agent_actions.shape[2:]), device=self.device)
-        log_probs_tensor = torch.as_tensor(agent_log_probs.reshape(flat_envs), device=self.device)
-        advantages_tensor = torch.as_tensor(agent_advantages.reshape(flat_envs), device=self.device)
-        action_masks_tensor = torch.as_tensor(agent_action_masks.reshape(flat_envs))
+        obs_tensor = torch.as_tensor(agent_obs.reshape(flat_envs, *agent_obs.shape[2:]), device = self.device)
+        local_ids_tensor = torch.as_tensor(agent_role_ids.reshape(flat_envs, *agent_role_ids.shape[2:]), device = self.device)
+        actions_tensor = torch.as_tensor(agent_actions.reshape(flat_envs, *agent_actions.shape[2:]), device = self.device)
+        log_probs_tensor = torch.as_tensor(agent_log_probs.reshape(flat_envs), device = self.device)
+        advantages_tensor = torch.as_tensor(agent_advantages.reshape(flat_envs), device = self.device)
+        action_masks_tensor = torch.as_tensor(agent_action_masks.reshape(flat_envs), device = self.device)
         active_masks_tensor = torch.as_tensor(agent_active_masks.reshape(flat_envs), device=self.device)
 
         for start_idx in range(0, flat_envs, batch_size):
@@ -151,6 +159,7 @@ class RolloutBuffer:
 
             yield {
                 "obs": obs_tensor[mb_indices],
+                "local_ids" : local_ids_tensor[mb_indices],
                 "actions": actions_tensor[mb_indices],
                 "log_probs": log_probs_tensor[mb_indices],
                 "advantages": advantages_tensor[mb_indices],

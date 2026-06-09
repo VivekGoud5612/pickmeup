@@ -26,18 +26,18 @@ class RewardCalculator:
     ## HANDCRAFTED SCORES (Not Dynamic) --- Instead of plain hp difference and distance, we measure many things here
     def _hero_hp_score(self, state : GameState) -> float: ## A simple calculation of mean of hp ratios...
 
-        heroes_mask = stateops.get_team_alive_mask(state)
+        heroes_mask = stateops.get_team_alive_mask(state, Teams.HEROES)
 
         if not np.any(state.hp[heroes_mask] > 0):
             return 0.0
 
-        return float(np.mean(state.hp[hereos_mask] / state.max_hp[heroes_mask]))
+        return float(np.mean(state.hp[heroes_mask] / state.max_hp[heroes_mask]))
 
     def _boss_hp_score(self, state : GameState):
 
-        return float(state.hp[self.boss_id] / state.max_hp[self.boss_is])
+        return float(state.hp[self.boss_id] / state.max_hp[self.boss_id])
 
-    def _hero_stamina_score(self, state : GameState):  # Stamina score for only the hereos
+    def _hero_stamina_score(self, state : GameState):  # Stamina score for only the heroes
 
         heroes_mask = state.teams[Teams.HEROES]
 
@@ -48,9 +48,9 @@ class RewardCalculator:
 
         return float(state.stamina[self.boss_id] / state.max_stamina[self.boss_id])
 
-    def _formation_score(self, state : GameState):  ## Measure how well the formation of hereos is 
+    def _formation_score(self, state : GameState):  ## Measure how well the formation of heroes is 
 
-        heroes_mask = stateops.get_team_alive_mask(state)
+        heroes_mask = stateops.get_team_alive_mask(state, Teams.HEROES)
         active_positions = state.positions[heroes_mask]
 
         if len(active_positions) <= 1: # If there are 0 or 1 agents alive then there is no meaning to calculate the formation score
@@ -59,7 +59,7 @@ class RewardCalculator:
         centroid = np.mean(active_positions, axis = 0)  # Does this mean that we are summing up all the pos (of shape [2,]) of all alive hero agents (axis = 0) and averaging over them ? Centroid  shape [2,].
         distances = np.sum(np.abs(active_positions - centroid), axis = 1)   # Axis 1 means that each position array subtracts and np.abs check if there are no negatives..And np.sum (of an array of size lets say (3,2) along  axis 1 would mean add each row, so end result is (3,1))
         
-        return -float*(np.mean(distances))  ## This way we can see if the group is closer or not. If the negative is verylarge that means that the agents are spread out. This automatically affects the reward, so it tries to minimize that closer to 0, which would make the formation close..
+        return -float(np.mean(distances))  ## This way we can see if the group is closer or not. If the negative is verylarge that means that the agents are spread out. This automatically affects the reward, so it tries to minimize that closer to 0, which would make the formation close..
 
     
     def _dealer_positions_score(self, state : GameState) -> float : # Reward if dealer is at a safe range than the boss and how much damage he did to the boss
@@ -67,7 +67,7 @@ class RewardCalculator:
         if state.hp[self.dealer_id] <= 0 or self.hp[self.boss_id] <= 0:
             return 0.0  #There is no meaning to calculate the reward of distance if both of them are dead.
 
-        distance = stateops.get_distance(state, self.dealer_id, self.boss_is)
+        distance = stateops.get_distance(state, self.dealer_id, self.boss_id)
         return 1.0 if (2 <= distance <= 4) else -float(abs(distance - 2.5))  ## If the distance is out of that range then dealer gets a negative reward
 
     def _healer_safety_score(self, state : GameState) -> float:
@@ -121,7 +121,7 @@ class RewardCalculator:
 
     def _get_handcrafted_potential(self, state : GameState) -> Tuple[float, float]:
 
-        alive_hereos = len(stateops.get_alive_agent_ids(state, Teams.HEROES))
+        alive_heroes = len(stateops.get_alive_agent_ids(state, Teams.HEROES))
 
         hero_hp = self._hero_hp_score(state)
         boss_hp_penalty = -self._boss_hp_score(state)   ## a negative score for heroes as boss shouldnt be alive... 
@@ -146,3 +146,135 @@ class RewardCalculator:
         boss_pot = (boss_hp * 10.0) + (hero_hp_penalty * 10.0) + (boss_stamina * 1.5) + boss_squish 
 
         return hero_pot, boss_pot
+
+
+    def _combat_reward_for_dealer(self, state : GameState, rewards : np.ndarray):
+
+        damage = state.damage_dealt(self.dealer_id)
+        stamina_spent = state.stamina_spent(self.dealer_id)
+
+        if damage > 0:
+            efficiency = damage / (stamina_spent + 1.0)
+            rewards[self.dealer_id] += (damage * 0.5) + (efficiency * 2.0)
+
+    def _combat_reward_for_tank(self, state : GameState, rewards : np.ndarray):
+
+        rewards[self.tank_id] += state.damage_dealt[self.tank_id]
+
+        blocked_dam = state.damage_reduction_by_block[self.tank_id]
+        null_dam = state.damage_reduction_by_nullification[self.tank_id]
+
+        if blocked_dam > 0:
+            rewards[self.tank_id] += blocked_dam * 1.5
+
+        if null_dam > 0:
+            rewards[self.tank_id] += null_dam * 2.0
+
+    def _combat_reward_for_healer(self, state : GameState, rewards : np.ndarray):
+
+        effective_heal = state.effective_heal[self.healer_id]
+        rewards[self.healer_id] += effective_heal * 0.8
+
+        if effective_heal == 0 and state.stamina_spent[self.healer_id]:  # wasting stamina on 0 effective heal, maybe healer used it on agents with full hp
+            rewards[self.healer_id] -= 1.0
+
+    def _combat_reward_for_boss(self, state : GameState, rewards : np.ndarray):
+
+        effective_heal = state.effective_heal[self.boss_id]
+        rewards[self.boss_id] += effective_heal * 0.8
+
+        if effective_heal == 0 and state.stamina_spent[self.boss_id]:  # wasting stamina on 0 effective heal, maybe healer used it on agents with full hp
+            rewards[self.boss_id] -= 1.0
+
+        rewards[self.boss_id] += state.damage_dealt[self.boss_id]  # I guess there is no need for efficiency check, because boss is expected to be something with high stamina
+
+    def calculate_decomposed_reward(self, old_state : GameState, new_state : GameState, processed_mask : np.ndarray, phase : int, old_values : np.ndarray, new_values : np.ndarray):  ## This contains the phase based reward calculation or more specifically all three reward calculations
+
+        num_agents = new_state.num_agents
+
+        potential_rewards = np.zeros(num_agents, dtype = np.float32)
+        terminal_rewards = np.zeros(num_agents, dtype = np.float32) 
+        combat_rewards = np.zeros(num_agents, dtype = np.float32)  ## BAsed on how well the impact of the agents attack took place (need to write again)
+
+
+        ## Phase based potentials calculation
+        
+        if phase == 1: alpha = 0.0
+        elif phase == 2: alpha = 0.2 
+        elif phase == 3: alpha = 0.5
+        elif phase == 4: alpha = 1 # Pure critic based value and Phase is given based on the current step count. if the count increased to some 500000 then phase 4 comes
+
+        old_hero_pot, old_boss_pot = self._get_handcrafted_potential(old_state)
+        new_hero_pot, new_boss_pot = self._get_handcrafted_potential(new_state)
+
+        for idx in range(num_agents):
+            is_boss = (new_state.roles[idx] == AgentRole.BOSS)
+            old_hand = old_boss_pot if is_boss else old_hero_pot
+            new_hand = new_boss_pot if is_boss else new_hero_pot
+
+            # Execute Potential Blending Formula: Φ = (1 - α) * Φ_handcrafted + α * V(s)
+            old_phi = ((1.0 - alpha) * old_hand) + (alpha * old_values[idx])
+            new_phi = ((1.0 - alpha) * new_hand) + (alpha * new_values[idx])    ## We gradually increase alpha and the importance of values also increase gradually
+
+            # Apply temporal shaping evaluation: R = γ * Φ(s') - Φ(s)
+            potential_rewards[idx] += (self.gamma * new_phi) - old_phi
+            
+            # Inject general step and validation penalties into operational logs
+            if new_state.hp[idx] > 0:
+                potential_rewards[idx] += self.time_step_penalty
+                if not processed_mask[idx]:
+                    potential_rewards[idx] += self.invalid_action_penalty
+
+        
+        ### Combat based reward calculation.. checking if that action was good or not
+        for idx in range(num_agents):
+            if old_state.hp[idx] <= 0:
+                continue  ## Dead agents are skipped, as there is no need for the whole reward calculation when the contribution is zero.
+
+            role = old_state.roles[idx]
+
+            if role == AgentRole.DEALER:
+                self._combat_reward_for_dealer(new_state, combat_rewards)
+
+            elif role == AgentRole.TANK:
+                self._combat_reward_for_tank(new_state, combat_rewards)
+
+            elif role == AgentRole.HEALER:
+                self._combat_reward_for_healer(new_state, combat_rewards)
+
+            elif role == AgentRole.BOSS:
+                self._combat_reward_for_boss(new_state, combat_rewards)
+
+            if new_state.exploration_bonus_triggered[idx] > 0:
+                combat_rewards[idx] += 0.5  ## Boost intrinsic motivation for exploring new states.
+        
+
+        ### Terminal rewards
+
+        heroes_mask = new_state.team_masks[Teams.HEROES]
+
+        for idx in range(num_agents):
+            was_alive = old_state.hp[idx] > 0
+            is_alive = new_state.hp[idx] > 0
+
+            if was_alive and not is_alive:
+                terminal_rewards[idx] += self.death_penalty
+
+                if idx == self.boss_id:
+                    living_heroes = stateops.get_alive_agent_ids(new_state, Teams.HEROES)   ##Boss defeated so heroes get some win bounty
+
+                    for hero_id in living_heroes:
+                        terminal_rewards[hero_id] += self.win_bounty 
+
+                else:
+                    terminal_rewards[self.boss_id] -= self.death_penalty   # IF heroes dead then boss gets good reward
+
+        return {
+            'potential_rewards' : potential_rewards,
+            'combat_rewards' : combat_rewards,
+            'terminal_rewards' : terminal_rewards,
+            'total_rewards' : potential_rewards + combat_rewards + terminal_rewards, 
+        }
+
+
+            

@@ -1,195 +1,114 @@
-from functools import staticmethod
-from dataclasses import dataclass
-from engine.environment.state import GameState
-from typing import Dict, List
-import numpy as np
+from typing import Dict, Tuple, Any 
+from engine.environment.state import GameState 
+from engine.agents.agent_data import AgentRole, Teams 
+from engine.environment.state_ops import StateOperations as stateops 
 
-@dataclass
-class ObservationFormat:
-    self_features : Dict 
-    ally_features : List[Dict]
-    enemy_features : List[Dict]
 
-    def to_vector(self) -> np.ndarray:
-         vector = []
 
-         vector.extend([
-            self.self_features['hp'],
-            self.self_features['x'],
-            self.self_features['y'],
-            self.self_features['skill_1_ready'],
-            self.self_features['skill_2_ready'],
-         ])
+class ObservationBuilder:
 
-         for ally in self.ally_features:
-
-            vector.extend([
-                ally['hp'],
-                ally['x'],
-                ally['y'],
-                ally['skill_1_ready'],
-                ally['skill_2_ready'],
-            ])
-        
-        for enemy in self.enemy_features:
-
-            vector.extend([
-                enemy['hp'],
-                enemy['x'],
-                enemy['y'],
-            ])
-
-        self.array = np.array(vector , dtype = np.float32)
-        
-        return self.array
+    VISION_RANGE = 3.0 
+    SELF_FEATURE_DIM = 9
+    FEATURE_DIM_PER_ENTITY = 5   # NUmber of features per agent 
+    TOTAL_PARTIAL_DIM = 20  ## 9 + Total entity slots (3 agents) * 5 features per agent 
+    NUM_ROLES = 4
 
     @staticmethod
-    def vector_size(array):
-        return len(array)
+    def _extract_self_features(state : GameState, agent_id : int) -> np.ndarrar:
 
-class ObservationEncoder:
+        features = np.zeros(ObservationBuilder.SELF_FEATURE_DIM, dtype = np.float32)
 
-    VISION_RANGE = 3
+        features[0] = stateops.get_hp_ratio(state, agent_id)  # Total of 9 features with gp, stamina, normalized positions and 3 skills and 2 if blocking or invincible
+        features[1] = stateops.get_stamina_ratio(state, agent_id)
+        features[2], features[3] = stateops.normalize_dims(state, agent_id)
+        features[4] = 1.0 if state.is_blocking[agent_id] else 0.0
+        features[5] = 1.0 if state.is_invincible[agent_id] else 0.0 
+        features[6] = stateops.is_skill_ready(state, ActionTypes.BASIC)  #Check if basic skill ready
+        features[7] = stateops.is_skill_ready(state, ActionTypes.UTILITY)
+        features[8] = stateops.is_skill_ready(state, ActionTypes.ULTIMATE)
 
-    @staticmethod
-    def build_observation(agent_id : int, gamestate : GameState):
+        return features 
 
-        role = gamestate.identities[agent_id].role
-        team = gamestate.teams[agent_id]
+    @staticmethod 
+    def _extract_entity_features(state : GameState, self_id : AgentRole, target_id : AgentRole, check_vision : bool) -> Tuple[np.ndarray, AgentRole];
 
-        self_features = ObservationEncoder._extract_agent_features(agent_id, gamestate)
+    ## Extract the features of one out of 3 other agents, of size 5 each which contain relative pos and norm hp, stamina and such
 
-        ally_features = []
-        enemy_features = []
+    features = np.zeros(ObservationBuilder.FEATURE_DIM_PER_ENTITY, dtype = np.float32)
+    role_id = state.roles[target_id]
 
-        if team == 'heroes':
+    if state.hp[target_id] <= 0:
+        return features, role_id  # There is no need for obs vuilding for a dead agent teammate or entity
 
-            hero_roles = {
-                gamestate.identities[aid].role : aid for aid, t in gamestate.teams.items() if t = 'heroes'
-            }
+    visible = True ## Vision Verification loop.. true for agents in the same team, but for hero agents and boss is , this is false till we go in range
+    if check_vision: ### A way to check if boss in in range. This is true only for agents in hero team and if the target is boss
+        visible = False # False till we go in range of boss
 
-            if role == 'Tank':
-                ally_order = [
-                    hero_roles.get('Dealer'),
-                    hero_roles.get('Healer')
-                ]
-            
-            elif role == 'Dealer':
-                ally_order = [
-                    hero_roles.get('Tank'),
-                    hero_roles.get('Healer')
-                ]
-            
-            else :
-                ally_order = [   ## Decide the order of the allies I have to append in the ally features
-                    hero_roles.get('Tank'),
-                    hero_roles.get('Dealer')
-                ]
-            
+        for teammate_id in [AgentRole.TANK, AgentRole.DEALER, AgentRole.HEALER]:
+            if state.hp[teammate_id] > 0:  # For alive agents
+                dist_between_hero_to_boss = stateops.get_distance(state, teammate_id, target_id)
 
-            for aid in ally_order:   #For allies.. we use the same helper function which we used for self features. Simply give a id and gamestate and it extracts
+                if dist <= ObservationBuilder.VISION_RANGE: ## If any hero agent is in range with boss, then the details are visible for all agents
+                    visible = True 
+                    break 
 
-                ally_features.append(
-                    ObservationEncoder._extract_agent_features(aid, gamestate)
-                )
-            
-            boss_id = next(
-                (bid for bid, t in gamestate.teams.items() if t = 'boss'),   ## Next method creates a geenrato style iterator here. We return the very first time we get some boss, as we have only one boss
-                None
-            )
-        
-            boss_visible = False
+    if not visible:  # If heroes cannot see the boss, then position and hp are negative to let the network know that the boss is not visible
+        features[0:2] -= 1.0 #Obscured position coordinates
+        return features, role_id
 
-            if gamestate.is_alive(boss_id):
-                for hid , t in gamestate.teams.items():
-                    if t = 'heroes' and gamestate.is_alive(hid):
-                        if gamestate.distance(hid , boss_id) <= ObservationEncoder.VISION_RANGE:
-                            boss_visible = True
-                            break
-                        
-                    
-            if boss_visible:
-                enemy_features.append(
-                    ObservationEncoder._extract_enemy_features(
-                        boss_id, gamestate
-                    )
-                )
-            else :
-                enemy_features.append({
-                    'hp' : 0.0,
-                    'x'  : -1.0,
-                    'y'  : -1.0
-                })
-            
-        else : ## If team is boss, that is if we are building boss's perspective
+    features[0] = (state.positions[target_id, 0] - state.positions[self_id, 0])  # calculating relative position
+    features[1] = (state.positions[target_id, 1] - state.posiions[self_id, 1]) 
+    features[2] = stateops.get_hp_ratio(state, target_id)
+    features[3] = stateops.get_stamina_ratio(state, target_id)
+    features[4] = 1.0 ## Alive flad confirmation 
 
-            hero_ids = [
-                aid for aid, t in gamestate.teams.items() if t = 'heroes'
-            ]
+    return features, role_id 
 
-            for hid in hero_ids:
-                visible = (
-                    gamestate.is_alive(hid) and gamestate.distance(agent_id, hid) <= ObservationEncoder.VISION_RANGE
-                )
-                
-                if visible:
-                    enemy_features.append(
-                        Observation._extract_enemy_features(hid, gamestate)
-                    )
-                
-                else:
-                    enemy_features.append({
-                        'hp' : 0.0,
-                        'x'  : -1.0,
-                        'y'  : -1.0
-                    })
-                
-        return ObservationFormat(
-            self_features = self_features,
-            ally_features = ally_features,
-            enemy_features = enemy_features,
-        )
 
-    @staticmethod
-    def _extract_agent_features(agent_id : int, gamestate : GameState) -> Dict:
+@staticmethod 
+def build_partial_obs(state : GameState, agent_id : int) -> Tuple[np.ndarray, np.ndarray]:
 
-        if agent_id is None or not gamestate.is_alive(agent_id):
-            return {
-                'hp' : 0.0,
-                'x' : -1.0,
-                'y' : -1.0,
-                'skill_1_ready' : 0,
-                'skill_2_ready' : 0,
-            }
+    continuous_obs = np.zeros(ObservationBuilder.TOTAL_CONTINUOUS_DIM, dtype = np.float32)
+    role_ids = np.zeros(NUM_ROLES, dtype = np.int32)   # For Role embeddings maybe.. Contains role IDs of self and other entity IDs..
 
-        pos = gamestate.positions[agent_id]
-        cools = gamestate.cooldowns.get(agent_id, [0,0])
+    role = state.role[agent_id]
+    is_boss = (role == AgentRole.BOSS)
+    boss_id = AgentRole.BOSS 
 
-        return {
-            'hp' : gamestate._hp_ratio(agent_id),
-            'x' : pos[0]/gamestate.grid_size ,
-            'y' : pos[1]/gamestate.grid_size,
-            'skill_1_ready' : 1.0 if cools[0] == 0.0 else 0.0,
-            'skill_2_ready' : 1.0 if cools[1] == 0.0 else 0.0,
-        }
+    continuous_obs[0:9] = ObservationBuilder._extract_self_features(state, agent_id) ## Populate the arrays with know information first 
+    role_ids[0] = role
 
-    
-    @staticmethod
-    def _extract_enemy_features(enemy_id : int, gamestate : GameState) -> Dict:
+    external_entities = stateops.get_agents_other_than_self(state, agent_id)  ## Moslty we will get in order of agent order.. so this works
 
-        if not gamestate.is_alive(enemy_id):
-            return {
-                "hp": 0.0,
-                "x": -1.0,
-                "y": -1.0,
-            }
+    for slot_idx, target_id in enumerate(external_entities):
 
-        pos = gamestate.positions[enemy_id]
+        check_vision = (not is_boss and target_id = boss_id)  ## If self is not boss (heroes) and if the other entity is boss then check vision is True
 
-        return {
-            "hp" : gamestate._hp_ratio(enemy_id),
-            "x" : pos[0] / gamestate.grid_size,
-            "y" : pos[1] / gamestate.grid_size,
-        }
+        features, target_role = ObservationBuilder._extract_entity_features(state, agent_id, target_id, check_vision = check_vision)
 
+        start_stride = 9 + (slot_idx * ObservationBuilder.FEATURE_DIM_PER_ENTITY)  # Its so that we can simply start with that entitys space. That is 9 + 5, 9 + 10, 9 + 15
+        end_stride = start_stride + ObservationBuilder.FEATURE_DIM_PER_ENTITY  # End stride... to specify where the entitys features end
+        continuous_obs[start_stride : end_stride] = features  ## Add already extracted features to the continuous vector at exactly at that position
+
+        role_ids[slot_idx + 1] = target_role   ## Leave the first slot for the self agent and fill other spaces with other entity IDs..
+
+    return continuous_obs, role_ids 
+
+
+@staticmethod 
+def build_full_state(state : GameState) -> Tuple[np.ndarray, np.ndarray]:  ## This is the observation builder for the global state
+
+    num_agents = state.num_agents 
+    global_features = np.zeros(num_agents * ObservationBuilder.TOTAL_CONTINUOUS_DIM, dtype = np.float32)  # There is no need for roles IDs here to be seperate, we just need to have a global role ID sequence according to agent index
+
+    for idx in range(num_agents):
+
+        features_start_stride = idx * ObservationBuilder.TOTAL_CONTINUOUS_DIM   # Having 4 times the normal amount, where each agents self comes exactly once. This way we have the whole meaningful information 
+        feature_end_stride = feature_start_stride + ObservationBuilder.TOTAL_CONTINUOUS_DIM
+
+        features, roles = ObservationBuilder.build_partial_obs(state, idx)
+
+        global_features[feature_start_stride : feature_end_stride] = features 
+
+    return global_features #, state.roles # So we can send the role array directly. But there is no need as we initialized the same in rollout.py
 

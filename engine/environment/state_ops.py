@@ -27,9 +27,6 @@ class StateOperations:
     @staticmethod 
     def get_alive_team_agent_ids(state : GameState, team : Teams):
 
-        if not team in state.teams:
-            raise RuntimeError('Need valid team name')
-
         alive_mask = state.hp > 0   ## Including boss 
 
         team_agents = state.team_masks[team]    # only the agents in team are True, others are False
@@ -41,14 +38,12 @@ class StateOperations:
         alive_mask = state.hp > 0 
 
         team_agents = state.team_masks[team] 
-        valid_mask = alive_mask & team_agents 
-
-        valid_mask = valid_mask[team_agents == True]   ### Teke only the agents in that team.. so we only take the values of the mask which are true.
+        valid_mask = alive_mask & team_agents    ### Teke only the agents in that team.. so we only take the values of the mask which are true.
 
         return valid_mask
 
     @staticmethod 
-    def get_allies(state : GameState, agent_id : int) -> np.ndarray:
+    def get_alive_allies(state : GameState, agent_id : int) -> np.ndarray:
 
         self_team = state.teams[agent_id]  ## self_team is a string with team name
         team_mask = state.team_masks[self_team]  # We get the team mask from the above team.
@@ -61,7 +56,16 @@ class StateOperations:
         return np.where(valid_mask)[0]
 
     @staticmethod 
-    def get_enemies(state : GameState, agent_id : int) -> np.ndarray:
+    def get_agents_other_than_self(state : GameState, agent_id : int):
+        self_mask = np.zeros(state.num_agents, dtype = np.bool_)
+        self_mask[agent_id] = True 
+
+        not_self_mask = ~self_mask 
+
+        return list(np.where(not_self_mask)[0])
+
+    @staticmethod 
+    def get_alive_enemies(state : GameState, agent_id : int) -> np.ndarray:
 
         self_team = state.teams[agent_id]
 
@@ -99,6 +103,9 @@ class StateOperations:
     def get_hp_ratio(state : GameState, agent_id : int):
         return (state.hp[agent_id] / state.max_hp[agent_id])
 
+    @staticmethod
+    def get_stamina_ratio(state : GameState, agent_id : int):
+        return (state.stamina[agent_id] / state.max_stamina[agent_id])
     
     ### POSITION HELPERS
     @staticmethod 
@@ -114,7 +121,8 @@ class StateOperations:
     ### COOLDOWN HELPERS
 
     @staticmethod
-    def is_skill_ready(state : GameState, agent_id : int, skill_idx : int):
+    def is_skill_ready(state : GameState, agent_id : int, action_type : ActionTypes):
+        skill_idx = state.ACTION_TO_INDEX_MAP[action_type]
         return state.cooldowns[agent_id, skill_idx] == 0 
 
 
@@ -145,8 +153,8 @@ class StateOperations:
         Returns True if either the Boss is dead, or ALL Heroes are dead.
         """
         # np.any() checks if AT LEAST ONE value in the masked array is True
-        heroes_alive = np.any(state.hp[state.team_masks["Heroes"]] > 0)
-        monsters_alive = np.any(state.hp[state.team_masks["Boss"]] > 0)
+        heroes_alive = np.any(state.hp[state.team_masks[Teams.HEROES]] > 0)
+        monsters_alive = np.any(state.hp[state.team_masks[Teams.MONSTERS]] > 0)
         
         return not (heroes_alive and monsters_alive)   # Works three times - If either one is False (AND returns false) and also when both are false..
 
@@ -154,14 +162,14 @@ class StateOperations:
     @staticmethod 
     def get_winning_team(state : GameState) :
 
-        heroes_alive = np.any(state.hp[state.team_masks['Heroes']] > 0)
-        monsters_alive = np.any(state.hp[state.team_masks['Monsters']] > 0)
+        heroes_alive = np.any(state.hp[state.team_masks[Teams.HEROES]] > 0)
+        monsters_alive = np.any(state.hp[state.team_masks[Teams.MONSTERS]] > 0)
 
         if not heroes_alive :
-            return 'Monsters'
+            return Teams.MONSTERS
 
         else :
-            return 'Heroes'
+            return Teams.HEROES
 
         
     ### RANGE QUEURIES 
@@ -173,7 +181,7 @@ class StateOperations:
         source_position = state.positions[source_agent_id]
         agent_positions = state.positions[agent_ids]
 
-        distances = np.sum(np.abs(agent_positions - source_position))
+        distances = np.sum(np.abs(agent_positions - source_position), axis = 1)
 
         range_mask = (distances >= min_range) & (distances <= max_range)
 
@@ -183,12 +191,12 @@ class StateOperations:
     @staticmethod 
     def get_allies_in_range(state : GameState, source_agent_id : int, min_range : int, max_range : int):
         
-        ally_ids = StateOperations.get_allies(state, source_agent_id)
+        ally_ids = StateOperations.get_alive_allies(state, source_agent_id)
         source_position = state.positions[source_agent_id]
     
         ally_positions = state.positions[ally_ids]  ## Returns all the arrays of that many ally ids.. that is shape = (num_allies, 2) 
 
-        distances = np.sum(np.abs(ally_positions - source_position))  ## Although the sizes dont match, we have ally_pos = (2,2) and source to be (2,) which is converted to (1,2) by numpy. And that single thing is copied virtually (not physically) that is broadcasted to match all the enemies .. and then subtraction takes place.
+        distances = np.sum(np.abs(ally_positions - source_position), axis = 1)  ## Although the sizes dont match, we have ally_pos = (2,2) and source to be (2,) which is converted to (1,2) by numpy. And that single thing is copied virtually (not physically) that is broadcasted to match all the enemies .. and then subtraction takes place.
         ## Also that np.abs takes place along columns..it takes the absolute value that is makes negative .. positive and np.sum -  that is for each row we calculate the total of that row.
 
         range_mask = (distances >= min_range) & (distances <= max_range)
@@ -201,10 +209,10 @@ class StateOperations:
     def get_enemies_in_range(state : GameState, source_agent_id : int, min_range : int, max_range : int):
         
         source_position = state.positions[source_agent_id] 
-        enemy_ids = StateOperations.get_enemies(state, source_agent_id)
+        enemy_ids = StateOperations.get_alive_enemies(state, source_agent_id)
         enemy_positions = state.positions[enemy_ids]  ## Returns all the arrays of that many enemy ids.. that is shape = (num_enemies, 2) 
 
-        distances = np.sum(np.abs(enemy_positions - source_position))  ## Although the sizes dont match, we have enemy_pos = (2,2) and source to be (2,) which is converted to (1,2) by numpy. And that single thing is copied virtually (not physically) that is broadcasted to match all the enemies .. and then subtraction takes place.
+        distances = np.sum(np.abs(enemy_positions - source_position), axis = 1)  ## Although the sizes dont match, we have enemy_pos = (2,2) and source to be (2,) which is converted to (1,2) by numpy. And that single thing is copied virtually (not physically) that is broadcasted to match all the enemies .. and then subtraction takes place.
         ## Also that np.abs takes place along columns.. With np.sum that is for each row we calculate the total of that row.
 
         range_mask = (distances >= min_range) & (distances <= max_range)
@@ -214,34 +222,83 @@ class StateOperations:
 
 
 
-        ### Regarding unique tiles visited
+    ### Regarding unique tiles visited
         
-        @staticmethod
-        def is_unique(state : GameState, agent_id : int, pos : Tuple[int, int]):
+    @staticmethod
+    def is_unique(state : GameState, agent_id : int, pos : Tuple[int, int]):
 
-            x,y = pos 
-            team = state.teams[agent_id]
+        x,y = pos 
+        team = state.teams[agent_id]
 
-            if state.team_visited_tiles[team][x][y] == True 
-                return False 
+        if state.team_visited_tiles[team, x, y] == True :
+            return False 
 
-            return True 
+        return True 
 
         
-        @staticmethod
-        def update_team_visited_tiles(state : GameState, agent_id : int, pos : Tuple[int, int]):
+    @staticmethod
+    def update_team_visited_tiles(state : GameState, agent_id : int, pos : Tuple[int, int]):
 
-            x,y = pos
-            team = state.teams[agent_id]
+        x,y = pos
+        team = state.teams[agent_id]
 
-            if StateOperations.is_unique(state, agent_id, pos):
-                state.team_visited_tiles[team, x, y] = True 
+        if StateOperations.is_unique(state, agent_id, pos):
+            state.team_visited_tiles[team, x, y] = True 
 
 
-        @staticmethod 
-        def recover_stamina(state : GameState):
+    @staticmethod 
+    def recover_stamina(state : GameState):
 
-            state.stamina = np.minimum(state.max_stamina, state.stamina + state.recovery_rates)
+        state.stamina = np.minimum(state.max_stamina, state.stamina + state.recovery_rates)
+
+
+    @staticmethod
+    def normalize_dims(state : GameState, agent_id : int):
+        x,y = state.positions[agent_id]
+        return x / state.grid_size, y / state.grid_size
 
             
 
+    ### Action MASK
+    @staticmethod
+    def get_action_mask(state: GameState, agent_id: int) -> np.ndarray:
+        """
+        Returns a boolean array of shape (8,) where False indicates an invalid action.
+        """
+        mask = np.ones(8, dtype=np.bool_)
+        
+        # Dead agents cannot execute any actions
+        if state.hp[agent_id] <= 0:
+            mask.fill(False)
+            return mask
+
+        current_pos = state.positions[agent_id]
+        occupied_positions = StateOperations.get_occupied_positions(state, exclude_id=agent_id)
+
+        # 1. MOVEMENT BOUNDARY & COLLISION VALIDATION
+        # UP (Checks grid top border and cell occupancy)
+        if current_pos[1] <= 0 or (current_pos[0], current_pos[1] - 1) in occupied_positions:
+            mask[0] = False # ActionTypes.UP
+            
+        # DOWN (Checks grid bottom border)
+        if current_pos[1] >= state.grid_size - 1 or (current_pos[0], current_pos[1] + 1) in occupied_positions:
+            mask[1] = False # ActionTypes.DOWN
+            
+        # LEFT (Checks grid left border)
+        if current_pos[0] <= 0 or (current_pos[0] - 1, current_pos[1]) in occupied_positions:
+            mask[2] = False # ActionTypes.LEFT
+            
+        # RIGHT (Checks grid right border)
+        if current_pos[0] >= state.grid_size - 1 or (current_pos[0] + 1, current_pos[1]) in occupied_positions:
+            mask[3] = False # ActionTypes.RIGHT
+
+        # 2. STAMINA AND COOLDOWN RESOURCE VALIDATION
+        # Index 5 maps to BASIC, 6 to UTILITY, 7 to ULTIMATE
+        for act_idx in [5, 6, 7]:
+            stamina_cost = state.stamina_cost[agent_id, act_idx]
+            cooldown_remaining = state.cooldowns[agent_id, act_idx - 5] # Cooldown maps to [0, 1, 2]
+
+            if state.stamina[agent_id] < stamina_cost or cooldown_remaining > 0:
+                mask[act_idx] = False
+
+        return mask

@@ -1,7 +1,8 @@
 from typing import Dict, List, Tuple, Any
-from engine.agents.agent_data import AgentIdentityFormat, AgentRole, Teams
+from engine.agents.agent_data import AgentIdentityFormat, AgentRole, Teams, SkillTypes
 import numpy as np
 from engine.actions.action_sequencer import ActionSequencer 
+from engine.actions.action import ActionTypes
 
 
 GRID_DIM = 2
@@ -37,9 +38,16 @@ class GameState:
         },
     }
 
+    ACTION_TO_INDEX_MAP = {
+        ActionTypes.BASIC : 0,
+        ActionTypes.UTILITY : 1,
+        ActionTypes.ULTIMATE : 2,
+    }
+
     def __init__(self, num_agents : int, grid_size : int=10):
         self.grid_size = grid_size
 
+        self.num_agents = num_agents
         ## STATIC attributes
         self.roles = np.zeros(num_agents, dtype = np.int32)  # There is no need for a string thing here because we can convert agentrole to IntEnum
         self.teams = np.zeros(num_agents, dtype = np.int32)  # Also converted to an intenum  # Assuming a specific team name signifies the agents team

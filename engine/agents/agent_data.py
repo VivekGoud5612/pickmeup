@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import random
 from enum import IntEnum 
+from typing import Dict, Any
 
 class AgentRole(IntEnum):
     TANK = 0
@@ -26,7 +27,7 @@ class SkillTypes(IntEnum):
     BLOCK = 1
     AOE = 8
     SPECIAL = 4
-    AGGRO = 2
+    INVINCIBLE = 2
     REGENERATE = 7
     ALL_HEAL = 6
     PIERCE = 3
