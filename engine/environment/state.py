@@ -4,7 +4,7 @@ import numpy as np
 import random
 
 class GameState:
-    def __init__(self, grid_size:int=10):
+    def __init__(self, grid_size:int):
         self.grid_size = grid_size
 
         self.positions: Dict[int, Tuple[int,int]] = {}
@@ -30,7 +30,7 @@ class GameState:
                 pos=(random.randint(0,self.grid_size-1),random.randint(0,2))
             self.positions[agent_id]=pos
         elif self.teams[agent_id]=="Boss":
-            self.positions[agent_id]=(random.randint(9,self.grid_size-1),random.randint(9,self.grid_size-1))
+            self.positions[agent_id]=(random.randint(self.grid_size-3,self.grid_size-1),random.randint(self.grid_size-3,self.grid_size-1))
 
         self.team_visited_tiles[team].add(self.positions[agent_id])
 
@@ -53,7 +53,7 @@ class GameState:
         if action==0 and y>0 :return (x,y-1)
         elif action==1 and y<self.grid_size-1 :return (x,y+1)
         elif action==2 and x>0 :return (x-1,y)
-        elif action==3 and x<self.grid_size-1 :return (x+1,)
+        elif action==3 and x<self.grid_size-1 :return (x+1,y)
         
         return (x,y)
     
@@ -165,7 +165,7 @@ class GameState:
             
         return obs
     
-    def get_boss_observations(self, boss_id) -> np.ndarray:
+    def get_boss_observations(self, boss_id:int ,) -> np.ndarray:
         obs = np.zeros(18, dtype=np.float32)
 
         ident = self.identities[boss_id]
@@ -178,8 +178,8 @@ class GameState:
         obs[3] = 1.0 if cds[0] == 0 else 0.0
         obs[4] = 1.0 if cds[1] == 0 else 0.0
 
-        heros = self.get_enemies(boss_id)
-        VISION_RANGE = 4
+        heroes = self.get_enemies(boss_id)
+        VISION_RANGE = self.grid_size*2
 
         for i ,h_id in enumerate([0,1,2]):
             start_idx = 5 + (i * 3)

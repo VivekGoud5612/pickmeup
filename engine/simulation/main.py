@@ -6,19 +6,20 @@ from engine.environment.env import RaidEnv
 import torch
 
 def train():
-    grid_size=13
+    grid_size=10
     print("Initializing Advanced Raid MARL Environment...")
     env = RaidEnv(grid_size)
     vis = None
     
     # --- HYPERPARAMETERS ---
-    MAX_EPISODES = 25000
+    MAX_EPISODES =25000
     PPO_UPDATE_THRESHOLD = 2048   # Standard PPO batch size
-    RENDER_INTERVAL = 1000     # Turn on Pygame every 1000 games
+    RENDER_INTERVAL = 1000    # Turn on Pygame every 1000 games
     LOG_INTERVAL = 100            # Print console stats every 100 games
     SAVE_INTERVAL = 5000          # Save weights every 5000 games
     MAX_ROUNDS = 150              # Prevent infinite games (kiting forever)
     CHECKPOINT_EPISODE=25000
+    ALTERNATE_HERO_AND_BOSS=1000
     
     # --- TRACKING METRICS ---
     global_steps = 0
@@ -26,7 +27,7 @@ def train():
                       2: deque(maxlen=LOG_INTERVAL), 3: deque(maxlen=LOG_INTERVAL)}
     recent_wins = deque(maxlen=LOG_INTERVAL) # 1 for Hero win, 0 for Boss win
     
-    # # Create directory for saving models
+    # Create directory for saving models
     # os.makedirs("saved_models", exist_ok=True)
     # env.reset()
 
@@ -101,7 +102,7 @@ def train():
         # Only trigger backpropagation if we have enough experiences gathered
         #and alternate between heros and bosses learning
 
-        hero_can_learn=(episode//1000)%2==0
+        hero_can_learn=(episode//ALTERNATE_HERO_AND_BOSS)%2==0
         for agent_id,agent in env.agents.items():
             current_memory_size=len(agent.policy.memory["states"])
 

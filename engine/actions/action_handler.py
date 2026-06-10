@@ -6,6 +6,8 @@ class ActionHandler:
     @staticmethod
     def _execute_movement(agent_id:int,action:int,gamestate:GameState)->bool:
 
+        gamestate.is_blocking[agent_id]=False
+
         x,y=gamestate.positions[agent_id]
 
         if action==0:
@@ -34,7 +36,7 @@ class ActionHandler:
     @staticmethod
     def _execute_combat(agent_id:int,action:int,gamestate:GameState)->Dict[str,Any]:
         
-        result = {"damage_dealt": 0, "healed": 0, "blocked": False ,"target_id":None ,"target_hp_ratio_before":None}
+        result = {"damage_dealt": 0, "healed": 0 ,"target_id":None ,"blocked_targets":None}
 
         identity=gamestate.identities[agent_id]
         role=identity.role
@@ -69,7 +71,6 @@ class ActionHandler:
             
             elif skill_name=="block":
                 gamestate.is_blocking[agent_id] = True 
-                result["blocked"] = True
 
         elif role=="Healer":
             my_team=gamestate.teams[agent_id]
@@ -111,6 +112,7 @@ class ActionHandler:
 
         elif role=="Boss":
             alive_heros=enemies
+            blocked_targets=[]
 
             if skill_name=="basic_attack":
                 closest_hero=None
@@ -130,10 +132,12 @@ class ActionHandler:
                     actual_damage=skill.power
                     if gamestate.identities[closest_hero].role=="Tank" and gamestate.is_blocking.get(closest_hero,False):
                         actual_damage=actual_damage/2
+                        blocked_targets.append(closest_hero)
                     
                     before_hp = gamestate.hp[closest_hero]
                     gamestate.hp[closest_hero]=max(0, before_hp - actual_damage)
                     result["damage_dealt"]=before_hp - gamestate.hp[closest_hero]
+                    result["blocked_targets"]=blocked_targets
 
             elif skill_name=="aoe":
                 total_damage=0
@@ -145,11 +149,13 @@ class ActionHandler:
                         actual_damage=skill.power
                         if gamestate.identities[h_id].role == "Tank" and gamestate.is_blocking.get(h_id, False):
                             actual_damage=actual_damage/2
+                            blocked_targets.append(h_id)
 
                         before_hp = gamestate.hp[h_id]
                         gamestate.hp[h_id]=max(0, before_hp - actual_damage)
                         total_damage+=before_hp - gamestate.hp[h_id]
                 result["damage_dealt"]=total_damage
+                result["blocked_targets"]=blocked_targets
         
         return result
 

@@ -6,7 +6,7 @@ from engine.environment.env import RaidEnv
 from engine.environment.grid import Grid
 
 def watch():
-    grid_size=13
+    grid_size=9
     print("Initializing Advanced Raid MARL Watch Mode...")
     env = RaidEnv(grid_size)
     vis = Grid(grid_size)
