@@ -1,93 +1,170 @@
-import torch
-import torch.nn as nn
 import numpy as np
+from typing import Tuple, Dict, Any
+
+# Import your core engine components
 from engine.environment.state import GameState
-from engine.agents.agent_data import AgentRole, Teams
 from engine.environment.state_ops import StateOperations as stateops
+from engine.environment.action_sequencer import ActionSequencer
+from engine.agents.policy.reward_calculator import RewardCalculator
+from engine.agents.policy.observation_builder import ObservationBuilder
 
-class MultiAgentObservationEncoder(nn.Module):
-    def __init__(self, raw_feature_dim: int = 10, role_embedding_dim: int = 16, output_dim: int = 128):
-        super().__init__()
-        
-        # 1. Learnable Role Embeddings: 4 Roles (Tank=0, Dealer=1, Healer=2, Boss=3)
-        self.role_embedding = nn.Embedding(num_embeddings=4, embedding_dim=role_embedding_dim)
-        
-        # 2. Continuous Feature Projection Layer
-        self.feature_projection = nn.Linear(raw_feature_dim, 48)
-        
-        # 3. Combined Fusion Network (Projects to your target 128-dim tensor)
-        self.fusion_network = nn.Sequential(
-            nn.Linear(48 + role_embedding_dim, 96),
-            nn.ReLU(),
-            nn.Linear(96, output_dim),
-            nn.LayerNorm(output_dim) # Stabilizes training across different agent roles
-        )
+class RaidEnv:
+    def __init__(self, grid_size: int = 20, max_steps: int = 200):
+        self.grid_size = grid_size
+        self.max_steps = max_steps
+        self.num_agents = 4
+        self.step_count = 0
 
-    def extract_raw_features(self, state: GameState, agent_id: int, boss_id: int = 3) -> np.ndarray:
+        # Instantiate the stateless backend singletons
+        self.state = GameState(grid_size=self.grid_size)
+        self.reward_calc = RewardCalculator()
+        self.obs_builder = ObservationBuilder(grid_size=self.grid_size)
+
+        # Mapping dictionary based on your reference
+        self.agents = {
+            0: "Tank",
+            1: "Dealer",
+            2: "Healer",
+            3: "Boss"
+        }
+
+    def reset(self) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:
         """
-        Slices the global continuous game state matrices from the viewpoint of a single agent.
-        Output Shape: (10,) continuous features.
+        Resets the physical environment to its starting state.
         """
-        features = []
+        self.step_count = 0
+        self.state.reset()
+
+        # Seed initial footprint into the exploration tracker
+        for agent_idx in range(self.num_agents):
+            x, y = self.state.positions[agent_idx]
+            team = self.state.teams[agent_idx]
+            self.state.team_visited_tiles[team, int(x), int(y)] = True
+
+        # Generate initial frames
+        obs_dict = self._get_observations()
         
-        # Self Metrics (Normalized)
-        features.append(state.hp[agent_id] / state.max_hp[agent_id])
-        features.append(state.stamina[agent_id] / state.max_stamina[agent_id])
-        features.append(state.positions[agent_id, 0] / state.grid_size) # Normalized X
-        features.append(state.positions[agent_id, 1] / state.grid_size) # Normalized Y
+        info = {
+            "action_masks": self._get_action_masks(),
+            "active_masks": self._get_active_masks(),
+            "handcrafted_potential": self._get_handcrafted_potentials()
+        }
+
+        return obs_dict, info
+
+    def step(self, actions: np.ndarray) -> Tuple[Dict[str, np.ndarray], np.ndarray, np.ndarray, bool, Dict[str, Any]]:
+        """
+        Executes a single frame of the simulation. No value functions used here.
+        """
+        self.step_count += 1
         
-        # Action Flags
-        features.append(1.0 if state.is_blocking[agent_id] else 0.0)
-        features.append(1.0 if state.is_invincible[agent_id] else 0.0)
+        # 1. Snapshot State for Reward Calculation
+        old_state_snapshot = self.state.clone_snapshot()
         
-        # Spatial Metrics Relative to the Threat (The Boss)
-        if agent_id == boss_id:
-            # If I am the boss, find the distance to the closest living hero
-            heroes_mask = state.team_masks[Teams.HEROES] & (state.hp > 0)
-            if np.any(heroes_mask):
-                hero_ids = np.where(heroes_mask)[0]
-                dists = [stateops.get_distance(state, agent_id, h_id) for h_id in hero_ids]
-                features.append(min(dists) / state.grid_size)
+        # 2. Clear Transient Trackers
+        self.state.exploration_bonus_triggered.fill(0.0)
+
+        # 3. Pre-process actions against strict mechanics masks
+        processed_mask = np.ones(self.num_agents, dtype=bool)
+        current_masks = self._get_action_masks()
+        
+        for a_idx in range(self.num_agents):
+            chosen_action = actions[a_idx]
+            if not current_masks[a_idx, chosen_action]:
+                # Invalid action attempted
+                processed_mask[a_idx] = False
+
+        # 4. Resolve the Physics & Mechanics Engine
+        ActionSequencer.resolve_step(self.state, actions)
+
+        # 5. Calculate RAW Combat Rewards (No Neural Network Values)
+        # Note: You'll need to ensure your RewardCalculator has a method that just gets the raw combat additions
+        combat_rewards = np.zeros(self.num_agents, dtype=np.float32)
+        
+        if old_state_snapshot.hp[1] > 0: # Dealer
+            self.reward_calc._combat_reward_for_dealer(self.state, combat_rewards)
+        if old_state_snapshot.hp[0] > 0: # Tank
+            self.reward_calc._combat_reward_for_tank(self.state, combat_rewards)
+        if old_state_snapshot.hp[2] > 0: # Healer
+            self.reward_calc._combat_reward_for_healer(self.state, combat_rewards)
+        if old_state_snapshot.hp[3] > 0: # Boss
+            self.reward_calc._combat_reward_for_boss(self.state, combat_rewards)
+
+        # 6. Evaluate Terminations (Win/Loss) & Truncations (Time Limit)
+        is_terminal = stateops.is_terminal(self.state)
+        truncated = bool(self.step_count >= self.max_steps)
+
+        terminated_array = np.zeros(self.num_agents, dtype=np.float32)
+        for a_idx in range(self.num_agents):
+            was_alive = old_state_snapshot.hp[a_idx] > 0
+            is_alive = self.state.hp[a_idx] > 0
+            if (was_alive and not is_alive) or is_terminal:
+                terminated_array[a_idx] = 1.0
+
+        # Add win/death penalties to combat_rewards directly based on terminations
+        for a_idx in range(self.num_agents):
+            if terminated_array[a_idx] == 1.0 and is_terminal:
+                if a_idx == self.reward_calc.boss_id:
+                    combat_rewards[self.reward_calc.boss_id] -= self.reward_calc.death_penalty
+                else:
+                    combat_rewards[a_idx] += self.reward_calc.win_bounty
+            elif terminated_array[a_idx] == 1.0:
+                combat_rewards[a_idx] += self.reward_calc.death_penalty
+
+        # 7. Package Outputs
+        next_obs_dict = self._get_observations()
+
+        info = {
+            "action_masks": self._get_action_masks(),
+            "active_masks": self._get_active_masks(),
+            # Expose the pure heuristic potential for main.py to blend with Values
+            "handcrafted_potential": self._get_handcrafted_potentials() 
+        }
+
+        return next_obs_dict, combat_rewards, terminated_array, truncated, info
+
+    def close(self):
+        pass
+
+    # =====================================================================
+    # INTERNAL HELPERS
+    # =====================================================================
+    def _get_observations(self) -> Dict[str, np.ndarray]:
+        """Harvests complete environment vision arrays."""
+        env_obs = np.zeros((self.num_agents, 24), dtype=np.float32)
+        env_roles = np.zeros((self.num_agents, 4), dtype=np.int32)
+        
+        for a_idx in range(self.num_agents):
+            obs, roles = self.obs_builder.build_partial_obs(self.state, a_idx)
+            env_obs[a_idx] = obs
+            env_roles[a_idx] = roles
+            
+        return {"obs": env_obs, "roles": env_roles}
+
+    def _get_action_masks(self) -> np.ndarray:
+        """Extracts strict binary rules for available moves from StateOperations."""
+        action_masks = np.zeros((self.num_agents, 8), dtype=bool)
+        for a_idx in range(self.num_agents):
+            action_masks[a_idx] = stateops.get_action_mask(self.state, a_idx)
+        return action_masks
+
+    def _get_active_masks(self) -> np.ndarray:
+        """Extracts active status (1.0 if alive, 0.0 if dead)."""
+        active_masks = np.zeros(self.num_agents, dtype=np.float32)
+        for a_idx in range(self.num_agents):
+            if stateops.is_alive(self.state, a_idx):
+                active_masks[a_idx] = 1.0
+        return active_masks
+
+    def _get_handcrafted_potentials(self) -> np.ndarray:
+        """Calculates the heuristic state values (Φ_handcrafted)."""
+        hero_pot, boss_pot = self.reward_calc._get_handcrafted_potential(self.state)
+        potentials = np.zeros(self.num_agents, dtype=np.float32)
+        
+        for a_idx in range(self.num_agents):
+            if self.state.roles[a_idx] == 3: # Boss
+                potentials[a_idx] = boss_pot
             else:
-                features.append(0.0)
-            features.extend([0.0, 0.0, 0.0]) # Padding metrics to keep shapes symmetric
-        else:
-            # If I am a hero, track my direct spatial mapping to the Boss
-            dist_to_boss = stateops.get_distance(state, agent_id, boss_id)
-            features.append(dist_to_boss / state.grid_size)
-            features.append((state.positions[boss_id, 0] - state.positions[agent_id, 0]) / state.grid_size) # Relative X
-            features.append((state.positions[boss_id, 1] - state.positions[agent_id, 1]) / state.grid_size) # Relative Y
-            features.append(state.hp[boss_id] / state.max_hp[boss_id]) # Boss Health threat assessment
-
-        return np.array(features, dtype=np.float32)
-
-    def forward(self, state: GameState) -> torch.Tensor:
-        """
-        Processes the global GameState and outputs a dense embedding tensor for all agents.
-        Output Shape: (num_agents, 128)
-        """
-        num_agents = state.num_agents
-        
-        # 1. Compile raw numpy slices and roles from the state arrays
-        raw_features_list = []
-        roles_list = []
-        
-        for idx in range(num_agents):
-            raw_features_list.append(self.extract_raw_features(state, idx))
-            roles_list.append(int(state.roles[idx])) # Direct IntEnum integer extraction
-
-        # 2. Convert batch targets into PyTorch tensors safely
-        raw_features_tensor = torch.tensor(np.array(raw_features_list), dtype=torch.float32)
-        roles_tensor = torch.tensor(roles_list, dtype=torch.long)
-
-        # 3. Process categorical role codes through learnable embedding space
-        role_embeds = self.role_embedding(roles_tensor) # Shape: (num_agents, 16)
-        
-        # 4. Project continuous spatial/vital statistics
-        projected_features = torch.relu(self.feature_projection(raw_features_tensor)) # Shape: (num_agents, 48)
-        
-        # 5. Concatenate streams and fuse down to your target 128 dimension block
-        combined = torch.cat([projected_features, role_embeds], dim=-1) # Shape: (num_agents, 64)
-        dense_embeddings = self.fusion_network(combined) # Shape: (num_agents, 128)
-        
-        return dense_embeddings
+                potentials[a_idx] = hero_pot
+                
+        return potentials

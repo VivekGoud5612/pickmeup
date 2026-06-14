@@ -10,8 +10,10 @@ class ObservationBuilder:
     VISION_RANGE = 3.0 
     SELF_FEATURE_DIM = 9
     FEATURE_DIM_PER_ENTITY = 5   # NUmber of features per agent 
-    TOTAL_PARTIAL_DIM = 20  ## 9 + Total entity slots (3 agents) * 5 features per agent 
+    TOTAL_PARTIAL_DIM = 24  ## 9 + Total entity slots (3 agents) * 5 features per agent 
     NUM_ROLES = 4
+    OBS_SIZE = 24
+    GLOBAL_OBS_SIZE = 96
 
     @staticmethod
     def _extract_self_features(state : GameState, agent_id : int) -> np.ndarrar:
@@ -35,7 +37,7 @@ class ObservationBuilder:
     ## Extract the features of one out of 3 other agents, of size 5 each which contain relative pos and norm hp, stamina and such
 
     features = np.zeros(ObservationBuilder.FEATURE_DIM_PER_ENTITY, dtype = np.float32)
-    role_id = state.roles[target_id]
+    role_id = state.roles[target_id]    ### For now role Ids and agent IDs are the same.. Next this needs to be correct when we upgrade to 2 tanks and multiple dealers.. etc..
 
     if state.hp[target_id] <= 0:
         return features, role_id  # There is no need for obs vuilding for a dead agent teammate or entity

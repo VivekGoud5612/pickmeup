@@ -1,6 +1,7 @@
 import numpy as np 
 from engine.environment.state import GameState
 from typing import Optional
+import copy
 
 class StateOperations:
 
@@ -302,3 +303,9 @@ class StateOperations:
                 mask[act_idx] = False
 
         return mask
+
+
+    
+    @staticmethod 
+    def state_snapshot(state : GameState):
+        return copy.deepcopy(state)  ## a deep copy to get different memory references for arrays inside  ....

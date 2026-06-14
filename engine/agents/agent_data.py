@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import random
+from engine.environment.env import AgentID
 from enum import IntEnum 
 from typing import Dict, Any
 
@@ -50,6 +51,7 @@ class AgentIdentityFormat:
     id : int
     role: AgentRole
     stats : Stats
+    Team : Teams
 
 class AgentIdentity:
     ROLES : Dict[AgentRole, Dict[str, Any]] = {
@@ -61,6 +63,7 @@ class AgentIdentity:
                 SkillTypes.BLOCK : Skill(min_range = 0, max_range = 0, cooldown = 10, stamina_cost = 10, strength_of_skill = 1.5), # Comparable to basic attack of dealer.. but no attack power, only able to block. But I dont know if I should another attack skill like dash or something
                 SkillTypes.INVINCIBLE : Skill(min_range = 1, max_range = 2, cooldown = 20, stamina_cost = 35, strength_of_skill = 7),  #Need to model this wihtout an errors
             },
+            'team' : Teams.HEROES,
         },#Strength of a skill is similar to the rank of that skill. That is how much impact does that give ... 0-9
 
         AgentRole.DEALER : {
@@ -71,6 +74,7 @@ class AgentIdentity:
                 SkillTypes.PIERCE : Skill(min_range = 1, max_range = 3, cooldown = 15, stamina_cost = 15, strength_of_skill = 1.75),
                 SkillTypes.SPECIAL : Skill(min_range = 2, max_range = 4, cooldown = 20, stamina_cost = 40, strength_of_skill = 7), ## A very straining attack
             },
+            'team' : Teams.HEROES,
         },
 
         AgentRole.HEALER : {
@@ -81,6 +85,7 @@ class AgentIdentity:
                 SkillTypes.HEAL : Skill(min_range = 0, max_range = 2, cooldown = 2, stamina_cost = 3, strength_of_skill = 2),
                 SkillTypes.ALL_HEAL : Skill(min_range = 1, max_range = 5, cooldown = 25, stamina_cost = 50, strength_of_skill = 9),
             },
+            'team' : Teams.HEROES,
         },
 
         AgentRole.BOSS : {
@@ -91,11 +96,12 @@ class AgentIdentity:
                 SkillTypes.REGENERATE : Skill(min_range = 0, max_range = 1, cooldown = 45, stamina_cost = 40, strength_of_skill = 6), ## Convert large amount of stamina to small hp that is proportional to strength * recovery here
                 SkillTypes.AOE : Skill(min_range = 1, max_range = 4, cooldown = 35, stamina_cost = 35, strength_of_skill = 4.5),
             },
+            'team' : Teams.MONSTERS
         },
     }
 
     @classmethod
-    def create_identity(cls, agent_id : int, role: AgentRole):  ## For now , later we use this to create diverse agent identities and base agent takes that and 
+    def create_identity(cls, agent_id : AgentID, role: AgentRole):  ## For now , later we use this to create diverse agent identities and base agent takes that and 
          ## the rule based or LLM agent with some sort of identity
 
         data = cls.ROLES.get(role, None)
@@ -111,5 +117,6 @@ class AgentIdentity:
                 attributes = data['attributes'],
                 skills = data['skills'],
             ),
+            team = data['team'],
         )
 

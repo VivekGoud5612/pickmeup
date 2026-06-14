@@ -30,22 +30,18 @@ class RewardCalculator:
 
         if not np.any(state.hp[heroes_mask] > 0):
             return 0.0
-
         return float(np.mean(state.hp[heroes_mask] / state.max_hp[heroes_mask]))
 
     def _boss_hp_score(self, state : GameState):
-
         return float(state.hp[self.boss_id] / state.max_hp[self.boss_id])
 
     def _hero_stamina_score(self, state : GameState):  # Stamina score for only the heroes
 
         heroes_mask = state.teams[Teams.HEROES]
-
         return float(np.mean(state.stamina[heroes_mask] / state.max_stamina[heroes_mask]))  ## There is no need for mask here, because we are calculating the stamina of all in potentials... But I guess we can separate the staminas out..
         
 
     def _boss_stamina_score(self, state : GameState):
-
         return float(state.stamina[self.boss_id] / state.max_stamina[self.boss_id])
 
     def _formation_score(self, state : GameState):  ## Measure how well the formation of heroes is 
@@ -150,7 +146,7 @@ class RewardCalculator:
 
     def _combat_reward_for_dealer(self, state : GameState, rewards : np.ndarray):
 
-        damage = state.damage_dealt(self.dealer_id)
+        damage = state.damage_dealt[self.dealer_id]
         stamina_spent = state.stamina_spent(self.dealer_id)
 
         if damage > 0:
@@ -188,7 +184,7 @@ class RewardCalculator:
 
         rewards[self.boss_id] += state.damage_dealt[self.boss_id]  # I guess there is no need for efficiency check, because boss is expected to be something with high stamina
 
-    def calculate_decomposed_reward(self, old_state : GameState, new_state : GameState, processed_mask : np.ndarray, phase : int, old_values : np.ndarray, new_values : np.ndarray):  ## This contains the phase based reward calculation or more specifically all three reward calculations
+    def calculate_decomposed_reward(self, old_state : GameState, new_state : GameState, phase : int, old_values : np.ndarray, new_values : np.ndarray):  ## This contains the phase based reward calculation or more specifically all three reward calculations
 
         num_agents = new_state.num_agents
 
@@ -222,7 +218,7 @@ class RewardCalculator:
             # Inject general step and validation penalties into operational logs
             if new_state.hp[idx] > 0:
                 potential_rewards[idx] += self.time_step_penalty
-                if not processed_mask[idx]:
+                if new_state.invalid_actions[idx]:
                     potential_rewards[idx] += self.invalid_action_penalty
 
         
@@ -250,7 +246,6 @@ class RewardCalculator:
         
 
         ### Terminal rewards
-
         heroes_mask = new_state.team_masks[Teams.HEROES]
 
         for idx in range(num_agents):

@@ -1,16 +1,18 @@
 from typing import Dict, List, Tuple, Any
-from engine.agents.agent_data import AgentIdentityFormat, AgentRole, Teams, SkillTypes
+from engine.agents.agent_data import AgentIdentity, AgentRole, Teams, SkillTypes
 import numpy as np
 from engine.actions.action_sequencer import ActionSequencer 
 from engine.actions.action import ActionTypes
+from engine.environment.env import AgentID
 
 
-GRID_DIM = 2
-NUM_SKILLS = 3
-NUM_ACTIONS = 8
-NUM_TEAMS = 2
 
 class GameState:
+
+    GRID_DIM = 2
+    NUM_SKILLS = 3
+    NUM_ACTIONS = 8
+    NUM_TEAMS = 2
 
     ACTION_SKILL_MAP = {
         AgentRole.TANK : {
@@ -38,13 +40,16 @@ class GameState:
         },
     }
 
+    SKILL_ACTION_MAP = {
+        key : {v : k for k, v in ACTION_SKILL_MAP[key].items()} for key in ACTION_SKILL_MAP.keys()
+    }
     ACTION_TO_INDEX_MAP = {
         ActionTypes.BASIC : 0,
         ActionTypes.UTILITY : 1,
         ActionTypes.ULTIMATE : 2,
     }
 
-    def __init__(self, num_agents : int, grid_size : int=10):
+    def __init__(self, num_agents : int, grid_size : int):
         self.grid_size = grid_size
 
         self.num_agents = num_agents
@@ -58,54 +63,133 @@ class GameState:
         self.recovery_rates = np.zeros(num_agents, dtype = np.float32)
 
         ## Skill specific entries for use to use at runtime 
-        self.skill_multiplier = np.zeros((num_agents, NUM_ACTIONS), dtype = np.float32)  ## This array has action spaces for total num agents, as skill multiplier is only for skills the first 5 are always 0.. but for easy tracking and retrieval and as every other action related arral also has 8 spaces.
-        self.skill_min_ranges = np.zeros((num_agents, NUM_ACTIONS), dtype = np.float32)
-        self.skill_max_ranges = np.zeros((num_agents, NUM_ACTIONS), dtype = np.float32)
-        self.skill_stamina_cost = np.zeros((num_agents, NUM_ACTIONS), dtype = np.float32)
+        self.skill_multiplier = np.zeros((num_agents, self.NUM_ACTIONS), dtype = np.float32)  ## This array has action spaces for total num agents, as skill multiplier is only for skills the first 5 are always 0.. but for easy tracking and retrieval and as every other action related arral also has 8 spaces.
+        self.skill_min_ranges = np.zeros((num_agents, self.NUM_ACTIONS), dtype = np.float32)
+        self.skill_max_ranges = np.zeros((num_agents, self.NUM_ACTIONS), dtype = np.float32)
+        self.skill_stamina_cost = np.zeros((num_agents, self.NUM_ACTIONS), dtype = np.float32)
+
+        ## Load static entries
+        self._load_static_elements() 
 
         ## run time mutable attributes
-        self.positions = np.zeros((num_agents, GRID_DIM), dtype = np.int32)
+        self.positions = np.zeros((num_agents, self.GRID_DIM), dtype = np.int32)
         self.hp = np.zeros(num_agents, dtype = np.float32)
         self.stamina = np.zeros(num_agents, dtype = np.float32)
-        self.cooldowns = np.zeros((num_agents, NUM_SKILLS), dtype = np.int32)
+        self.cooldowns = np.zeros((num_agents, self.NUM_SKILLS), dtype = np.int32)
         self.is_blocking = np.zeros(num_agents, dtype = bool)
         self.is_invincible = np.zeros(num_agents, dtype = bool)
+        self.invalid_actions = np.zeros(num_agents, dtype = bool)  # We use this in base agent, and there is no need for processed mask in environment, and we can simply assing invalid action penalty for invalid actions
         
-        ##Evnet arrays for reward calculation
+        ##Event arrays for reward calculation
         self.damage_dealt = np.zeros(num_agents, dtype = np.float32)
-        self.effective_healing = np.zeros(num_agents, dtype = np.float32)
+        self.effective_heal = np.zeros(num_agents, dtype = np.float32)
         self.damage_reduction_by_block = np.zeros(num_agents, dtype = np.float32)
         self.damage_reduction_by_nullification = np.zeros(num_agents, dtype = np.float32)
         self.stamina_spent = np.zeros(num_agents, dtype = np.float32)
         self.damage_taken = np.zeros(num_agents, dtype = np.float32)
 
-        self.team_visited_tiles = np.zeros((NUM_TEAMS, grid_size, grid_size), dtype = bool) # Where we have a grid of tiles for each team, and if they visited the that specific dim 1 and 2 for that team is True  # old {"Heroes": set(), "Boss": set()}  ## Unique tiles a team visited .. will visit after
-        self.team_masks = np.zeros((NUM_TEAMS, num_agents), dtype = bool)
+        self.team_visited_tiles = np.zeros((self.NUM_TEAMS, grid_size, grid_size), dtype = bool) # Where we have a grid of tiles for each team, and if they visited the that specific dim 1 and 2 for that team is True  # old {"Heroes": set(), "Boss": set()}  ## Unique tiles a team visited .. will visit after
+        self.team_masks = np.zeros((self.NUM_TEAMS, num_agents), dtype = bool)
 
-    def register_agent(self, agent_id:int, identity : AgentIdentityFormat, team : Teams, start_position : Tuple[int, int]):
+
+    def _load_static_elements(self):
+
+        for role, data in AgentIdentity.ROLES.items():  ## Instead of getting data during run time, we can simply get the whole data at the start of creation
+        ## As role_id = agent_id for now.....
+            self.roles[role] = role
+            self.teams[role] = data['team']
+            self.max_hp[role] = data['max_hp']
+            self.max_stamina[role] = data['attributes'].stamina 
+            self.defences[role] = data['attributes'].defence 
+            self.strengths[role] = data['attributes'].strength 
+            self.recovery_rates[role] = data['attributes'].recovery_rate 
+
+            for name, skill in data['skills'].items():  ## As we have 3 skills we need to loop over and add data
+
+                action_idx = SKILL_ACTION_MAP[role][name]  ## We get the action ID corresponding to the skill name
+                self.skill_multiplier[role, action_idx] = skill.strength_of_skill
+                self.min_range[role, action_idx] = skill.min_range 
+                self.max_range[role, action_idx] = skill.max_range 
+                self.skill_stamina_cost[role, action_idx] = skill.stamina_cost 
+
+
+    def reset(self):  ## This is the one called in reset and is in charge of resetting all the state elements which change during run time
+
+        self.hp[:] = self.max_hp[:]  ## Copy as is, without making both the arrays point to the same memory
+        self.stamina[:] = self.max_stamina[:]
+        self.cooldowns[:].fill(0.0)  ## Let the cooldowns be anything , here we reset everything
+        self.invalid_actions.fill(False)  ## This as well.... other things like is blocking, is invincible are taken care of in action sequencer, but we do that here as well.. no chances
         
+        self.is_blocking.fill(False)  ## We set all the blockings to False at each new step, because the tank blocks once per step and has a cooldown. This needs to reset or else the tank stays on block the whole episode...
+        self.invincible.fill(False)
+        self.damage_dealt.fill(0.0)
+        self.effective_heal.fill(0.0)
+        self.damage_reduction_by_block.fill(0.0)
+        self.damage_reduction_by_nullification.fill(0.0)
+        self.stamina_spent.fill(0.0)
+        self.damage_taken.fill(0.0)
+        self.exploration_bonus_triggered.fill(0.0)  ## for agents which went to new state , give some sort of a bonus
+
+        self.team_visited_tiles.fill(False)
+
+        # 2. Vectorized Position Randomization
+        occupied = set()   ## A different approach of the same randomized positions ... gemini gave this so decided to keep it...
+        
+        for a_idx in range(self.num_agents):
+            team = self.teams[a_idx]
+            
+            while True:
+                if team == Teams.HEROES:
+                    # Heroes spawn in the top 3 rows
+                    pos = (np.random.randint(0, self.grid_size), np.random.randint(0, 3))
+                else: 
+                    # Boss spawns in the bottom right 3x3 corner
+                    pos = (np.random.randint(self.grid_size - 3, self.grid_size), 
+                           np.random.randint(self.grid_size - 3, self.grid_size))
+                
+                if pos not in occupied:
+                    # Assign to array and mark occupied
+                    self.positions[a_idx] = np.array(pos)
+                    occupied.add(pos)
+                    
+                    # Mark the initial starting tile as visited for the team
+                    self.team_visited_tiles[team, pos[0], pos[1]] = True
+                    break
+
+    def register_agent(self, agent_id : AgentID, identity : AgentIdentityFormat):
+
         self.roles[agent_id] = identity.role 
-        self.teams[agent_id] = team
+        self.teams[agent_id] = identity.team
         self.max_hp[agent_id] = identity.stats.max_hp 
         self.max_stamina[agent_id] = identity.stats.attributes.stamina 
         self.defences[agent_id] = identity.stats.attributes.defence 
         self.strengths[agent_id] = identity.stats.attributes.strength 
+
+        ## For position randomizer
+        if identity.team = Teams.HEROES:
+            pos = (random.randint(0, self.grid_size - 1), random.randint(0, 2))   ## POsition randomizer... The very first step where position is taken on any row on first 3 cols..
+            while pos in self.positions: ## If the position is already occupied
+                pos = (random.randint(0, self.grid_size - 1), random.randint(0, 2))   ## If the randomized generated position is already occupied then we run the loop till we get a non occupied position
+            self.positions[agent_id] = pos
+
+        elif identity.team = Tems.MONSTERS:
+            self.positions[agent_id] = (random.randint(self.grid_size-3, self.grid_size-1), random.randint(self.grid_size-3, self.grid_size-1)) ##  Assing a random position of boss in the last 3*3 grid of that big 20*20 grid
 
         self.positions[agent_id] = np.array(start_position)
         self.hp[agent_id] = self.max_hp[agent_id] 
         self.stamina[agent_id] = self.max_stamina[agent_id]
         
         self.team_masks[team][agent_id] = True 
+        self.team_visited_tiles[self.teams[agent_id]] = self.positions[agent_id]
 
         role = identity.role 
         skills = identity.stats.skills
 
-        for action_enum, skill_enum in ACTION_SKILL_MAP[role].items() :  ## Where action enum is ActionTypes.ULTIMATE or some shit.. where skill name is the mapped skill name
+        for action_enum, skill_enum in self.ACTION_SKILL_MAP[role].items() :  ## Where action enum is ActionTypes.ULTIMATE or some shit.. where skill name is the mapped skill name
 
-            action_idxg = action_enum.value   # Action enums value is just a string
             skill_data = skills[skill_enum]
 
-            self.skill_multipler[agent_id, action_idx] = skill_data.strength_of_skill 
-            self.skill_min_range[agent_id, action_idx] = skill_data.min_range 
-            self.skill_max_range[agent_id, action_idx] = skill_data.max_range 
-            self.skill_stamina_cost[agent_id, action_idx] = skill_data.stamina_cost
+            self.skill_multipler[agent_id, action_enum] = skill_data.strength_of_skill 
+            self.skill_min_range[agent_id, action_enum] = skill_data.min_range 
+            self.skill_max_range[agent_id, action_enum] = skill_data.max_range 
+            self.skill_stamina_cost[agent_id, action_enum] = skill_data.stamina_cost

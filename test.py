@@ -34,5 +34,7 @@ action_type = ActionType.BASIC
 role = AgentRole.TANK 
 
 skill = ACTION_SKILL_MAP[role][action_type]
+skill_idx
 
 print(skill)
+

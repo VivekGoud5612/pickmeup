@@ -6,14 +6,14 @@ import torch.nn.functional as func
 from engine.agents.policy.network import Actor, Critic
 from engine.agents.agent_data import AgentRole
 import torch.optim as optim
+from engine.environmen.state import GameState
+from engine.environment.observation import ObservationBuilder
 
 LR = 3e-4
 GAMMA = 0.95
 LAMBDA = 0.95
 K_EPOCH = 4
-OBS_SIZE = 128
 EPS_CLIP = 0.2
-ACTION_SPACE_SIZE = 8
 ENT_COEF = 0.1
 
 class ValueNormalizer:
@@ -25,7 +25,6 @@ class ValueNormalizer:
         self.running_var = 1.0
 
         self.count = epsilon   #Global count for step rewards. Initialized to epsilon,to prevent zero division on first update
-
 
     def update(self, returns : torch.Tensor) -> None:
 
@@ -53,38 +52,36 @@ class ValueNormalizer:
 
         self.count = total_count
 
-
     def normalize(self, returns : torch.Tensor) -> torch.Tensor:
         # Standard deviation is square root of Variance
         std = (self.running_var + self.epsilon) ** 0.5
-
         return (returns - self.running_mean) / std
     
-
     def denormalize(self, values : torch.Tensor) -> torch.Tensor:
 
         std = (self.running_var + self.epsilon) ** 0.5
-
         return (values * std) + self.running_mean
 
-class Trainer:
 
-    def __init__(self, agent_id : int, role : AgentRole, device : torch.device = "cuda" if torch.cuda.is_available() else "cpu"):
+
+class Agent:
+
+    def __init__(self, agent_id : int, role : AgentRole, device : torch.device = "cpu"): ## As we only use this for get action and evaluate global state, there is no need for GPU.. and the tensors inside that batch of update actor are on the GPU. we need to write that in main file
         
         self.agent_id = agent_id 
         self.role = role 
-        self.device = device 
+        self.device = device     
 
-        self.actor = Actor(OBS_SIZE, ACTION_SPACE_SIZE).to(self.device)  #Role embedding size is already written or defined there..
-        self.critic = Critic(OBS_SIZE).to(self.device)
-
+        self.actor = Actor(ObservationBuilder.OBS_SIZE, GameState.NUM_ACTIONS).to(self.device)  #Role embedding size is already written or defined there..
+        
         self.actor_optimizer = optim.Adam(self.actor.parameters(), lr = LR, eps = 1e-5)
-        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr = LR, eps = 1e-5)
-
-        self.value_normalizer = ValueNormalizer()
 
     @torch.no_grad()
-    def get_action(self, obs_tensor : torch.Tensor, role_id_tensor : torch.Tensor, mask_tensor : torch.Tensor, is_training : bool = True) -> Tuple[torch.Tensor, torch.Tensor]:  ## Batched tensors here... of shape (num_envs, obs_dim) or (num_envs, mask_dim)
+    def get_action(self, obs_tensor : np.ndarray, role_id_tensor : np.ndarray, mask_tensor : np.ndarray, is_training : bool = True) -> Tuple[torch.Tensor, torch.Tensor]:  ## Batched tensors here... of shape (num_envs, obs_dim) or (num_envs, mask_dim)
+
+        obs_tensor = torch.as_tensor(obs_tensor, device = self.device)
+        role_id_tensor = torch.as_tensor(role_id_tensor, device = self.device)
+        mask_tensor = torch.as_tensor(mask_tensor, device = self.device)
 
         self.actor.eval()   ## Switches network to evaluation mode, where it freezes BatchNorm or Dropout layers.
         distribution = self.actor(obs_tensor, role_id_tensor, mask_tensor)   ## Distribution of size (num_actions,) .. As we separate out actions, observations and masks...
@@ -99,9 +96,43 @@ class Trainer:
         self.actor.train()
 
         return actions, log_probs
+    
+    def update_actor(self, batch : Dict[str, torch.Tensor]) -> float:  # In the training loop we need to pass agent ID to the buffer as well to get that specific agents batch.. of shape (batch_size, shape of whatever that other metric)
+
+        distribution = self.actor(batch['obs'], batch['local_ids'], batch['action_masks'])  ## For our updated critic, distribution of size (batch_size, num_actions = 8)
+        new_log_probs = distribution.log_prob(batch['actions'])  # Shape (batch_size, num_actions = 8)
+        entropy = distribution.entropy() # (batch_size, 1)
+
+        ratios = torch.exp(new_log_probs - batch['log_probs'])   ## New Log probs are also the size of batch.. because actions are sampled from the same batch
+        surr1 = ratios * batch['advantages'] # advantages of size (batch, num_act)
+        surr2 = torch.clamp(ratios, 1.0 - EPS_CLIP, 1.0 + EPS_CLIP) * batch['advantages']
+        raw_policy_loss = -torch.min(surr1, surr2)  ## We are aiming to maximize surr1 or 2 which increase the ratios and advantages which is good.
+
+        agent_loss = raw_policy_loss - (ENT_COEF * entropy)  ## Also aim to maximise entropy (weighted) to let agents explore more.
+
+        active_masks = batch['active_masks']
+        masked_actor_loss = (agent_loss * active_masks).sum() / torch.clamp(active_masks.sum(), min = 1.0)  ## refer notes
+
+        self.actor_optimizer.zero_grad()
+        masked_actor_loss.backward()
+        nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=10.0)
+        self.actor_optimizer.step()
+
+        return masked_actor_loss.item()
+
+
+class Global:
+
+    def __init__(self, device : str = "cpu"):
+
+        self.critic = Critic(ObservationBuilder.GLOBAL_OBS_SIZE).to(self.device)
+        self.value_normalizer = ValueNormalizer()
+        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr = LR, eps = 1e-5)
 
     @torch.no_grad()
-    def evaluate_global_state(self, state_tensor : torch.Tensor) -> torch.Tensor:   ## State_tensor shape is (num_envs, global_state_dim).. But if the global state dim is more than 1, then we need to flatten the dimension hard.
+    def evaluate_global_state(self, state_tensor : np.ndarray) -> torch.Tensor:   ## State_tensor shape is (num_envs, global_state_dim).. But if the global state dim is more than 1, then we need to flatten the dimension hard.
+
+        state_tensor = torch.as_tensor(state_tensor, device = self.device)
 
         self.critic.eval()
         normalized_values = self.critic(state_tensor).squeeze(-1)   ## normal values shape would be (num_envs, 1).. squeeze(-1) removes last dim.. so shape becomes (num_envs,)
@@ -109,8 +140,8 @@ class Trainer:
         ## Note that as the target is normalized and all, critics weights change such a way that , values come out normalized from the network.. so we have to denormalize those as to compute returns and advantages, else the value signal becomes weak which might cause advantages or returns to skew towards current rewards
 
         raw_values = self.value_normalizer.denormalize(normalized_values)
-        return raw_values
-
+        return raw_values 
+    
     
     def update_critic(self, batch : Dict[str, torch.Tensor]) -> float:
          
@@ -131,28 +162,3 @@ class Trainer:
         self.critic_optimizer.step()
 
         return critic_loss 
-
-    
-    def update_actor(self, batch : Dict[str, torch.Tensor]) -> float:  # In the training loop we need to pass agent ID to the buffer as well to get that specific agents batch.. of shape (batch_size, shape of whatever that other metric)
-
-        distribution = self.actor(batch['obs'], batch['local_ids'], batch['action_masks'])  ## For our updated critic, distribution of size (batch_size, num_actions = 8)
-        new_log_probs = distribution.log_prob(batch['actions'])  # Shape (batch_size, num_actions = 8)
-        entropy = distribution.entropy() # (batch_size, 1)
-
-        ratios = torch.exp(new_log_probs - batch['log_probs'])   ## New Log probs are also the size of batch.. because actions are sampled from the same batch
-        surr1 = ratios * batch['advantages'] # advantages of size (batch, num_act)
-        surr2 = torch.clamp(ratios, 1.0 - EPS_CLIP, 1.0 + EPS_CLIP) * batch['advantages']
-        raw_policy_loss = -torch.min(surr1, surr2)  ## We are aiming to maximize surr1 or 2 which increase the ratios and advantages which is good.
-
-
-        agent_loss = raw_policy_loss - (ENT_COEF * entropy)  ## Also aim to maximise entropy (weighted) to let agents explore more.
-
-        active_masks = batch['active_masks']
-        masked_actor_loss = (agent_loss * active_masks).sum() / torch.clamp(active_masks.sum(), min = 1.0)  ## refer notes
-
-        self.actor_optimizer.zero_grad()
-        masked_actor_loss.backward()
-        nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=10.0)
-        self.actor_optimizer.step()
-
-        return masked_actor_loss.item()
