@@ -1,0 +1,58 @@
+import torch
+import numpy as np 
+from engine.environment.env import Env 
+from engine.environment.state import GameState 
+from engine.environment.observation import ObservationBuilder 
+
+
+class Inference:
+
+    def __init__(self, checkpoint_path = None):
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print(f"[*]Booting Inference Engine on {self.device}")
+
+        self.env = Env(grid_size = 20, max_steps = 200)  ## Here we just initialize a single env because this is not trainingand there is no need for those many envs, there isonly one env
+        self.obs, info = self.env.reset()  ## Reset the env during this class initialization so that the step can go on in a loop
+
+        self.agent = MAgent(device = self.device)
+
+        if checkpoint_path:  ## IF the checkpoint path is not None, that is if there is a saved model then 
+            checkpoint = torch.load(checkpoint_path, map_location = self.device) ## load the weihts from the path onto the device
+            self.agent.actor.load_state_dict(checkpoint['actor_state_dict'])  ## WE load the actor weights because right now there is no need for critic, as the actor is already trained.. and we need only actions
+
+            print(f"[*] We loaded the saved model at checkpoint : {checkpoint_path}")
+
+        else:
+            print("[!] Running with randomly initialized actor...")
+
+
+    def get_next_frame(self): ## That is a function for the websocket endpoint to get the next state after a step
+
+        current_obs = self.obs['obs']
+        current_roles = self.obs['roles']
+        current_global = self.obs['global_state']
+        
+        dummy_action_mask = np.ones(self.env.num_agents, self.env.state.NUM_ACTIONS, dtype = np.bool_)
+        
+        with torch.no_grad():
+             ## Add batch dim to these arrays  .. as the network is tuned to work on 3D Data...
+
+            obs_array = np.expand_dims(current_obs, axis = 0)  ## Shape (1, 4, 24)
+            roles_array = np.expand_dims(current_roles, axis = 0)
+            global_array = np.expand_dims(current_global, axis = 0)
+            action_mask_array = np.expand_dims(dummy_action_mask, axis = 0)
+
+            actions, _, _ = self.agent.get_actions_and_values(  ## Shape (1,4)
+                obs = obs_array,
+                roles = roles_array,
+                global_state = global_array,
+                action_masks = action_masks_array,
+                is_training = False,
+            )
+
+            flat_actions = actions[0] ## Take the first line so shape is (4,)
+
+        self.obs, _, dones, truncated, self.info = self.env.step(flat_actions)
+
+        state = self.env.state  ## Store the state class after step.. so that we can send hte JSON to frontend via router..3.
+        game_state_payload
