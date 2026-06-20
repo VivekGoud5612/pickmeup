@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PickMeUp :: System Architecture — Phase 3.0.1</title>
+<style>
+
+/* ============================================================
+   COLOR TOKENS — edit here to restyle the whole page
+   ============================================================ */
+:root{
+  --bg:        #0A0D12;
+  --panel:     #12161D;
+  --panel-2:   #181D26;
+  --border:    #232938;
+  --border-hi: #2F3A4F;
+  --text:      #E7EAEF;
+  --text-dim:  #8089A0;
+  --text-faint:#565F75;
+
+  --accent:     #4FE8C4;   /* built / live data */
+  --accent-dim: rgba(79,232,196,0.12);
+  --warn:       #F2A93B;   /* open question / blocked */
+  --warn-dim:   rgba(242,169,59,0.12);
+  --todo:       #8C7CF0;   /* designed, not yet built */
+  --todo-dim:   rgba(140,124,240,0.12);
+  --danger:     #F2685B;
+  --danger-dim: rgba(242,104,91,0.12);
+
+  --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, monospace;
+  --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+
+*{ margin:0; padding:0; box-sizing:border-box; }
+
+body{
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  background-image:
+    radial-gradient(circle at 15% 0%, rgba(79,232,196,0.05), transparent 40%),
+    radial-gradient(circle at 85% 30%, rgba(140,124,240,0.04), transparent 40%);
+}
+
+.wrap{ max-width: 1080px; margin: 0 auto; padding: 56px 24px 120px; }
+
+/* ============================================================
+   HEADER
+   ============================================================ */
+.terminal-bar{
+  display:flex; align-items:center; gap:8px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px 8px 0 0;
+  padding: 10px 14px;
+}
+.dot{ width:10px; height:10px; border-radius:50%; }
+.dot.r{ background:#F2685B; } .dot.y{ background:#F2A93B; } .dot.g{ background:#4FE8C4; }
+.terminal-label{ font-family: var(--mono); font-size: 12px; color: var(--text-faint); margin-left: 6px; }
+
+.hero{
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 12px 12px;
+  padding: 36px 32px 32px;
+  margin-bottom: 48px;
+}
+.hero-eyebrow{
+  font-family: var(--mono); font-size: 12px; letter-spacing: 0.12em;
+  color: var(--accent); text-transform: uppercase; margin-bottom: 14px;
+}
+.hero h1{
+  font-family: var(--mono); font-weight: 700; font-size: 32px;
+  letter-spacing: -0.01em; margin-bottom: 10px;
+}
+.hero p{ color: var(--text-dim); font-size: 15px; max-width: 640px; }
+
+.status-strip{ display:flex; gap:10px; margin-top: 24px; flex-wrap: wrap; }
+.chip{
+  font-family: var(--mono); font-size: 11.5px; padding: 6px 12px;
+  border-radius: 20px; border: 1px solid var(--border-hi);
+  display:flex; align-items:center; gap:7px; color: var(--text-dim);
+}
+.chip .sw{ width:7px; height:7px; border-radius:50%; }
+.sw.built{ background: var(--accent); }
+.sw.open{ background: var(--warn); }
+.sw.todo{ background: var(--todo); }
+
+/* ============================================================
+   PIPELINE SPINE
+   ============================================================ */
+.pipeline{ position: relative; padding-left: 40px; }
+.spine{
+  position: absolute; left: 13px; top: 8px; bottom: 8px; width: 2px;
+  background: linear-gradient(to bottom, var(--accent) 0%, var(--accent) 62%, var(--todo) 62%, var(--todo) 100%);
+  opacity: 0.35;
+}
+
+.stage{ position: relative; margin-bottom: 22px; }
+.node{
+  position:absolute; left:-40px; top: 22px; width: 26px; height: 26px;
+  border-radius:50%; background: var(--panel); border: 2px solid var(--border-hi);
+  display:flex; align-items:center; justify-content:center;
+  font-family: var(--mono); font-size: 11px; color: var(--text-dim); font-weight:600;
+  z-index:2;
+}
+.node.built{ border-color: var(--accent); color: var(--accent); box-shadow: 0 0 0 4px var(--accent-dim); }
+.node.todo{ border-color: var(--todo); color: var(--todo); box-shadow: 0 0 0 4px var(--todo-dim); }
+
+.card{
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  padding: 22px 24px; transition: border-color .15s ease;
+}
+.card:hover{ border-color: var(--border-hi); }
+
+.card-top{ display:flex; justify-content:space-between; align-items:flex-start; gap:16px; margin-bottom: 12px; flex-wrap: wrap; }
+.stage-title{ font-family: var(--mono); font-size: 16px; font-weight:700; }
+.stage-sub{ font-family: var(--mono); font-size: 11px; color: var(--text-faint); margin-top: 4px; letter-spacing:0.04em; }
+
+.badge{
+  font-family: var(--mono); font-size: 10.5px; font-weight:600; letter-spacing:0.05em;
+  padding: 4px 10px; border-radius: 5px; white-space:nowrap; text-transform: uppercase;
+}
+.badge.built{ background: var(--accent-dim); color: var(--accent); }
+.badge.active{ background: var(--warn-dim); color: var(--warn); }
+.badge.todo{ background: var(--todo-dim); color: var(--todo); }
+
+.card p{ color: var(--text-dim); font-size: 14px; margin-bottom: 10px; }
+.card ul{ list-style:none; }
+.card li{
+  font-size: 13.5px; color: var(--text-dim); padding: 5px 0 5px 18px; position:relative;
+}
+.card li::before{ content:'→'; position:absolute; left:0; color: var(--text-faint); font-family: var(--mono); }
+.shape{ font-family: var(--mono); color: var(--accent); font-size: 12.5px; }
+.shape.t{ color: var(--todo); }
+
+/* ============================================================
+   SIGNATURE ELEMENT — shared memory zero-copy diagram
+   ============================================================ */
+.shm-wrap{
+  display:grid; grid-template-columns: 1fr auto 1fr; gap: 18px; align-items:center;
+  margin: 18px 0 6px; padding: 22px; background: var(--panel-2);
+  border: 1px solid var(--border); border-radius: 10px;
+}
+.workers{ display:grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.worker{
+  font-family: var(--mono); font-size: 10.5px; color: var(--text-dim);
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+  padding: 7px 9px; text-align:center; position:relative; overflow:hidden;
+}
+.worker::after{
+  content:''; position:absolute; top:0; left:-100%; width:60%; height:100%;
+  background: linear-gradient(90deg, transparent, var(--accent-dim), transparent);
+  animation: sweep 2.6s linear infinite;
+}
+.worker:nth-child(2)::after{ animation-delay:.3s; }
+.worker:nth-child(3)::after{ animation-delay:.6s; }
+.worker:nth-child(4)::after{ animation-delay:.9s; }
+.worker:nth-child(5)::after{ animation-delay:1.2s; }
+.worker:nth-child(6)::after{ animation-delay:1.5s; }
+.worker:nth-child(7)::after{ animation-delay:1.8s; }
+.worker:nth-child(8)::after{ animation-delay:2.1s; }
+@keyframes sweep{ to{ left:140%; } }
+
+.shm-core{
+  font-family: var(--mono); font-size: 11px; text-align:center; color: var(--accent);
+  background: var(--accent-dim); border: 1px solid var(--accent); border-radius: 8px;
+  padding: 18px 14px; white-space:nowrap;
+}
+.shm-core .label{ font-size: 9px; color: var(--text-dim); display:block; margin-top:4px; letter-spacing:0.05em; }
+
+.pipes-note{
+  display:flex; align-items:center; gap: 8px; margin-top: 14px;
+  font-family: var(--mono); font-size: 11px; color: var(--text-faint);
+}
+.pipes-note .line{ flex:1; height:1px; background: var(--border-hi); border-top: 1px dashed var(--border-hi); background: none; }
+
+/* ============================================================
+   CALLOUT — open question / blocker
+   ============================================================ */
+.callout{
+  margin-top: 14px; padding: 14px 16px; border-radius: 8px;
+  background: var(--warn-dim); border: 1px solid rgba(242,169,59,0.35);
+}
+.callout-title{
+  font-family: var(--mono); font-size: 11.5px; font-weight:700; color: var(--warn);
+  text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;
+}
+.callout p{ color: #D9C9A6; font-size: 13.5px; }
+
+/* ============================================================
+   SIDE PANELS — open questions + build queue
+   ============================================================ */
+.panels{ display:grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 56px; }
+.panel{
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 22px 24px;
+}
+.panel h3{
+  font-family: var(--mono); font-size: 13px; letter-spacing:0.05em; text-transform:uppercase;
+  margin-bottom: 16px; display:flex; align-items:center; gap:8px;
+}
+.panel h3 .n{ color: var(--text-faint); font-weight:400; }
+.q-list{ list-style:none; counter-reset: q; }
+.q-list li{
+  counter-increment: q; font-size: 13.5px; color: var(--text-dim);
+  padding: 9px 0 9px 28px; border-bottom: 1px solid var(--border); position:relative;
+}
+.q-list li:last-child{ border-bottom:none; padding-bottom:0; }
+.q-list li::before{
+  content: counter(q); position:absolute; left:0; top:9px;
+  font-family: var(--mono); font-size: 11px; color: var(--warn);
+  width:18px; height:18px; border:1px solid var(--warn); border-radius:4px;
+  display:flex; align-items:center; justify-content:center;
+}
+.todo-list{ list-style:none; }
+.todo-list li{
+  font-size: 13.5px; color: var(--text-dim); padding: 9px 0 9px 26px;
+  border-bottom: 1px solid var(--border); position:relative;
+}
+.todo-list li:last-child{ border-bottom:none; padding-bottom:0; }
+.todo-list li::before{
+  content:''; position:absolute; left:0; top:13px; width:12px; height:12px;
+  border: 1.5px solid var(--todo); border-radius: 3px;
+}
+
+footer{
+  margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--border);
+  font-family: var(--mono); font-size: 11px; color: var(--text-faint); text-align:center;
+}
+
+@media (max-width: 720px){
+  .panels{ grid-template-columns: 1fr; }
+  .shm-wrap{ grid-template-columns: 1fr; }
+  .hero h1{ font-size: 24px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="terminal-bar">
+    <div class="dot r"></div><div class="dot y"></div><div class="dot g"></div>
+    <span class="terminal-label">~/pickmeup/architecture.md</span>
+  </div>
+
+  <div class="hero">
+    <div class="hero-eyebrow">System Architecture · Phase 3.0.1</div>
+    <h1>PickMeUp — MAPPO × Full-Stack Pipeline</h1>
+    <p>End-to-end flow from the multi-agent RL environment through shared-memory parallel execution, training, and out to a live browser-streamed inference engine.</p>
+    <div class="status-strip">
+      <div class="chip"><span class="sw built"></span>Built &amp; running</div>
+      <div class="chip"><span class="sw open"></span>Open question / active debug</div>
+      <div class="chip"><span class="sw todo"></span>Designed — not yet built</div>
+    </div>
+  </div>
+
+  <div class="pipeline">
+    <div class="spine"></div>
+
+    <!-- STAGE 1 -->
+    <div class="stage">
+      <div class="node built">01</div>
+      <div class="card">
+        <div class="card-top">
+          <div><div class="stage-title">Environment Core</div><div class="stage-sub">Gymnasium · 20×20 grid · GameState</div></div>
+          <div class="badge built">Built</div>
+        </div>
+        <p>Static agent data (HP, stamina, defense, ranges) pre-loaded once. Runtime state — positions, cooldowns, status effects — lives in mutable NumPy arrays.</p>
+        <ul>
+          <li>Local obs <span class="shape">(4, 24)</span> → Actor input</li>
+          <li>Global state <span class="shape">(4, 96)</span> → Critic input</li>
+          <li>Role embeddings <span class="shape">(4, 4)</span> one-hot: Tank / Dealer / Healer / Boss</li>
+          <li>Action space — MultiDiscrete(8): movement (0–3) + role skills (4–7)</li>
+          <li>Action &amp; active masks block invalid / dead-agent actions at the source</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- STAGE 2 -->
+    <div class="stage">
+      <div class="node built">02</div>
+      <div class="card">
+        <div class="card-top">
+          <div><div class="stage-title">Reward Pipeline</div><div class="stage-sub">Phase-annealed potentials</div></div>
+          <div class="badge built">Built</div>
+        </div>
+        <p>Handcrafted potentials (HP score, formation, tactical position) dominate early training. An annealing <em>alpha</em> — scaled by <span class="shape">global_step / TOTAL_STEPS</span> — smoothly hands control to raw combat/terminal rewards as training matures.</p>
+        <ul>
+          <li>Phase weights: 0 → 0.2 → 0.5 → 1.0 (value-based)</li>
+          <li>Terminal rewards: win bounty, death penalty</li>
+          <li>Computed from old-state vs new-state, no summary dict</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- STAGE 3 — SIGNATURE -->
+    <div class="stage">
+      <div class="node built">03</div>
+      <div class="card">
+        <div class="card-top">
+          <div><div class="stage-title">Parallel Execution</div><div class="stage-sub">SharedSubprocessVectorEnv · 8 workers</div></div>
+          <div class="badge built">Built</div>
+        </div>
+        <p>Python's GIL blocks true thread parallelism, so each environment runs as an isolated OS process. Instead of pickling NumPy arrays through Pipes, workers write directly into POSIX shared memory — the main process reads it with zero copy, zero serialization.</p>
+
+        <div class="shm-wrap">
+          <div class="workers">
+            <div class="worker">env_0</div><div class="worker">env_1</div>
+            <div class="worker">env_2</div><div class="worker">env_3</div>
+            <div class="worker">env_4</div><div class="worker">env_5</div>
+            <div class="worker">env_6</div><div class="worker">env_7</div>
+          </div>
+          <div style="font-family:var(--mono); font-size:18px; color:var(--text-faint); text-align:center;">⇉</div>
+          <div class="shm-core">RAM BLOCK<span class="label">mmap · np.ndarray(buffer=shm.buf)</span></div>
+        </div>
+
+        <div class="pipes-note">
+          <span>Pipes carry low-bandwidth control only — step / reset / curriculum_level</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- STAGE 4 -->
+    <div class="stage">
+      <div class="node built">04</div>
+      <div class="card">
+        <div class="card-top">
+          <div><div class="stage-title">Curriculum Engine</div><div class="stage-sub">Dynamic difficulty scaling</div></div>
+          <div class="badge built">Active</div>
+        </div>
+        <p>A rolling deque of the last 50 outcomes tracks hero win-rate. Crossing 85% triggers a level-up: checkpoint saved, queue cleared, new level broadcast down every Pipe.</p>
+        <ul>
+          <li>Boss <span class="shape">max_hp</span> scales up, capped at 1000</li>
+          <li>Hero spawn radius pushes outward with level</li>
+          <li>Currently step-gated: boss HP intentionally reduced early to validate learning signal first</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- STAGE 5 -->
+    <div class="stage">
+      <div class="node built">05</div>
+      <div class="card">
+        <div class="card-top">
+          <div><div class="stage-title">Rollout Buffer + GAE</div><div class="stage-sub">Batched temporal tensor store</div></div>
+          <div class="badge built">Built</div>
+        </div>
+        <p>Pointer-based insertion into pre-allocated float32 arrays — <span class="shape">[steps, envs, agents]</span>. Death masking gives dead agents log-prob 0 rather than removing them, keeping tensor shapes fixed.</p>
+        <ul>
+          <li>GAE computed backward: <span class="shape">δ + γλ·gae(t+1)</span>, vectorized as an env-agent matrix</li>
+          <li><span class="shape">next_non_terminal</span> zeroes the bootstrap at episode boundaries</li>
+          <li>Truncated games store a terminal observation separately — prevents bootstrapping into garbage values from the <em>next</em> episode</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- STAGE 6 -->
+    <div class="stage">
+      <div class="node built">06</div>
+      <div class="card">
+        <div class="card-top">
+          <div><div class="stage-title">MAPPO Update Loop</div><div class="stage-sub">Actor / Critic · orthogonal init · LayerNorm</div></div>
+          <div class="badge active">Active debugging</div>
+        </div>
+        <p>Shared-weight actor with role embeddings (DOTA2-style parameter sharing). Value normalizer tracks running mean/std so critic targets stay on a stable scale. Huber loss on the critic, PPO-clip + entropy bonus on the actor, gradients clipped at norm 10.</p>
+        <ul>
+          <li>Entropy coefficient now decays with curriculum alpha — earlier fixed-coefficient bug caused flat 1.2–1.5 entropy</li>
+          <li>Fixed: <span class="shape">team_mask</span> uninitialized → both sides "dead" → instant reset loop</li>
+          <li>Fixed: global state not written on worker reset → critic evaluating stale state</li>
+        </ul>
+
+        <div class="callout">
+          <div class="callout-title">⚠ Open question — zero-sum gradient collision</div>
+          <p>Hero and Boss currently share one network. In a zero-sum game, a winning Hero move and the corresponding Boss loss backprop opposite-signed gradients through the <em>same</em> hidden layers in the same batch — they cancel. Diagnosed via entropy collapse (~1.3) and advantage flatlining at 0.0. Planned fix: split into separate <span class="shape">hero_agent</span> / <span class="shape">boss_agent</span> networks, sliced from the same rollout buffer by agent index.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- STAGE 7 -->
+    <div class="stage">
+      <div class="node built">07</div>
+      <div class="card">
+        <div class="card-top">
+          <div><div class="stage-title">Checkpoint</div><div class="stage-sub">.pt — milestone snapshot</div></div>
+          <div class="badge built">Built</div>
+        </div>
+        <p>Saved on every curriculum level-up. This is the single artifact that bridges training and inference — everything below this line loads from here, nothing upstream needs to know inference exists.</p>
+      </div>
+    </div>
+
+    <!-- STAGE 8 — TODO -->
+    <div class="stage">
+      <div class="node todo">08</div>
+      <div class="card" style="border-color: rgba(140,124,240,0.3);">
+        <div class="card-top">
+          <div><div class="stage-title">Inference Engine</div><div class="stage-sub">FastAPI · Ghost Engine · /ws/combat</div></div>
+          <div class="badge todo">Designed — build next</div>
+        </div>
+        <p>A second, gradient-free instance of the same <span class="shape t">Env</span> loads the best checkpoint and runs in pure inference mode. A WebSocket endpoint drives a continuous game loop — query network, step physics, serialize state.</p>
+        <ul>
+          <li>Uvicorn serving a single <span class="shape t">/ws/combat</span> WebSocket route</li>
+          <li>Payload: positions, HP, step count — kept deliberately lightweight</li>
+          <li>Target tick rate: 30+ fps streamed to any connected client</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- STAGE 9 — TODO -->
+    <div class="stage">
+      <div class="node todo">09</div>
+      <div class="card" style="border-color: rgba(140,124,240,0.3);">
+        <div class="card-top">
+          <div><div class="stage-title">Visualizer Frontend</div><div class="stage-sub">React + HTML5 Canvas</div></div>
+          <div class="badge todo">Designed — build next</div>
+        </div>
+        <p>React handles connection lifecycle only. Incoming JSON writes into a <span class="shape t">useRef</span> — deliberately <em>not</em> <span class="shape t">useState</span> — so the DOM never re-renders 30 times a second.</p>
+        <ul>
+          <li>A pure <span class="shape t">requestAnimationFrame</span> loop runs at 60fps, fully decoupled from React's render cycle</li>
+          <li>Reads the ref's live memory address each frame, redraws grid + heroes + boss with 2D canvas math</li>
+          <li>This split is what avoids the React reconciliation cliff under a 30fps data stream</li>
+        </ul>
+      </div>
+    </div>
+
+  </div><!-- /pipeline -->
+
+  <!-- SIDE PANELS -->
+  <div class="panels">
+    <div class="panel">
+      <h3>Open research questions <span class="n">— from training log</span></h3>
+      <ul class="q-list">
+        <li>Should boss and heroes share a policy, or split entirely?</li>
+        <li>Is advantage normalization hiding team-specific signal?</li>
+        <li>How do published MAPPO papers handle mixed cooperative/adversarial setups?</li>
+        <li>Should curriculum difficulty gate on win-rate or raw reward?</li>
+        <li>How is self-play typically implemented in modern RL systems?</li>
+        <li>Do batches need to be split by team now, not just by agent?</li>
+      </ul>
+    </div>
+
+    <div class="panel">
+      <h3>Next build queue</h3>
+      <ul class="todo-list">
+        <li>Split <span class="shape">hero_agent</span> / <span class="shape">boss_agent</span> networks to kill gradient collision</li>
+        <li>Add vision range / fog-of-war to observations</li>
+        <li>Boss habitat zone — stat boost for staying, occasional incentive to roam</li>
+        <li>Re-check critic batch expansion — actor trains on <span class="shape">envs×steps</span>, critic was over-expanding by <span class="shape">×agents</span></li>
+        <li>Verify Value Normalizer behaves correctly on the very first unfit batch</li>
+        <li>Build FastAPI Ghost Engine + <span class="shape">/ws/combat</span> route</li>
+        <li>Build React Canvas client once inference stream is live</li>
+      </ul>
+    </div>
+  </div>
+
+  <footer>
+    PickMeUp / Phase 3.0.1 — generated as a working reference, not a pitch. Edit the CSS tokens at the top of this file to restyle.
+  </footer>
+
+</div>
+</body>
+</html>
