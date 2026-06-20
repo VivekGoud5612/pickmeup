@@ -1,152 +1,130 @@
+import torch
+import torch.optim as optim
+import torch.nn as nn
+import torch.nn.functional as func
+from typing import Dict, Tuple
 import numpy as np
-import gymnasium as gym
-from gymnasium import spaces
-from typing import Tuple, Dict, Any, Optional
 
-# Import your core engine components
-from engine.environment.state import Gastateops
-from engine.environment.action_sequencer import ActionSequencermeState
-from engine.environment.state_ops import StateOperations as 
-from engine.agents.policy.reward_calculator import RewardCalculator
-from engine.agents.policy.observation_builder import ObservationBuilder
+# Assuming you import your networks and ValueNormalizer here
+from engine.agents.policy.network import SharedActor, SharedCritic
+# from engine.agents.policy.utils import ValueNormalizer 
 
-class RaidEnv(gym.Env):
-    """
-    Custom Multi-Agent Gymnasium Environment for a 4-Agent Boss Raid.
-    Outputs Local Obs for the Actor and Global State for the MAPPO Critic.
-    """
-    def __init__(self, grid_size: int = 20, max_steps: int = 500):
-        super().__init__()
+class MAPPOAgent:
+    def __init__(self, device: torch.device, lr_actor: float = 3e-4, lr_critic: float = 1e-3):
+        self.device = device
         
-        self.grid_size = grid_size
-        self.max_steps = max_steps
-        self.step_count = 0
-        self.num_agents = 4
-
-        # Instantiate backend DoD components
-        self.state = GameState(grid_size=self.grid_size)
-        self.reward_calc = RewardCalculator()
-        self.obs_builder = ObservationBuilder(grid_size=self.grid_size)
-
-        # =====================================================================
-        # GYMNASIUM SPACES DEFINITION
-        # =====================================================================
-        # Action Space: 4 agents, each choosing from 8 discrete actions
-        self.action_space = spaces.MultiDiscrete([8] * self.num_agents)
-
-        # Observation Space: Dict containing local obs, roles, and the MAPPO global state
-        self.observation_space = spaces.Dict({
-            "obs": spaces.Box(low=-np.inf, high=np.inf, shape=(self.num_agents, 24), dtype=np.float32),
-            "roles": spaces.Box(low=0, high=3, shape=(self.num_agents, 4), dtype=np.int32),
-            "global_state": spaces.Box(low=-np.inf, high=np.inf, shape=(self.num_agents, 24 * self.num_agents), dtype=np.float32)
-        })
-
-    def reset(self, seed: Optional[int] = None, options: Optional[Dict] = None) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:
-        super().reset(seed=seed)         
-        self.step_count = 0
-        self.state.reset()
-
-        # Seed initial footprint into the exploration tracker
-        for agent_idx in range(self.num_agents):
-            x, y = self.state.positions[agent_idx]
-            team = self.state.teams[agent_idx]
-            self.state.team_visited_tiles[team, int(x), int(y)] = True
-
-        # Generate initial frames
-        obs_dict = self._get_observations()
+        # 1. Initialize Decoupled Networks
+        self.actor = SharedActor().to(device)
+        self.critic = SharedCritic().to(device)
         
-        info = {
-            "action_masks": self._get_action_masks(),
-            "active_masks": self._get_active_masks()
-        }
-
-        return obs_dict, info
-
-    def step(self, actions: np.ndarray) -> Tuple[Dict[str, np.ndarray], np.ndarray, np.ndarray, bool, Dict[str, Any]]:
-        self.step_count += 1
+        # 2. Independent Optimizers (The key to preventing the Critic Bully effect)
+        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=lr_actor, eps=1e-5)
+        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=lr_critic, eps=1e-5)
         
-        # 1. Snapshot State & Extract Historical Values for Reward Shaping (PBRS)
-        old_state_snapshot = self.state.clone_snapshot()
-        old_values = self.state.current_step_value_predictions 
+        self.value_normalizer = ValueNormalizer()
         
-        # 2. Clear Transient Trackers
-        self.state.exploration_bonus_triggered.fill(0.0)
+        # Hyperparameters
+        self.eps_clip = 0.2
+        self.ent_coef = 0.01
+        self.max_grad_norm = 10.0
 
-        # 3. Pre-process actions against strict mechanics masks
-        processed_mask = np.ones(self.num_agents, dtype=bool)
-        current_masks = self._get_action_masks()
-        for a_idx in range(self.num_agents):
-            if not current_masks[a_idx, actions[a_idx]]:
-                processed_mask[a_idx] = False
-
-        # 4. Resolve Physics & Mechanics
-        ActionSequencer.resolve_step(self.state, actions)
-
-        # 5. Calculate Decomposed Rewards
-        new_values = self.state.current_step_value_predictions
-        reward_breakdown = self.reward_calc.calculate_decomposed_reward(
-            old_state=old_state_snapshot,
-            new_state=self.state,
-            processed_mask=processed_mask,
-            phase=1,
-            old_values=old_values,
-            new_values=new_values
-        )
-        rewards = reward_breakdown['total_rewards']
-
-        # 6. Evaluate Terminations & Truncations
-        is_terminal = stateops.is_terminal(self.state)
-        truncated = bool(self.step_count >= self.max_steps)
-
-        terminated_array = np.zeros(self.num_agents, dtype=np.float32)
-        for a_idx in range(self.num_agents):
-            was_alive = old_state_snapshot.hp[a_idx] > 0
-            is_alive = self.state.hp[a_idx] > 0
-            if (was_alive and not is_alive) or is_terminal:
-                terminated_array[a_idx] = 1.0
-
-        # 7. Package Outputs
-        next_obs_dict = self._get_observations()
+    @torch.no_grad()
+    def get_actions_and_values(self, obs: np.ndarray, global_state: np.ndarray, 
+                               roles: np.ndarray, action_masks: np.ndarray, is_training: bool = True) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Lightning-fast batched inference for Rollout Collection"""
+        self.actor.eval()
+        self.critic.eval()
         
-        info = {
-            "action_masks": self._get_action_masks(),
-            "active_masks": self._get_active_masks(),
-            "reward_breakdown": reward_breakdown, 
-        }
-
-        # Terminal Observation Trap for GAE Bootstrapping
-        if is_terminal or truncated:
-            info["terminal_observation"] = next_obs_dict
-
-        return next_obs_dict, rewards, terminated_array, truncated, info
-
-    # =====================================================================
-    # INTERNAL HELPERS
-    # =====================================================================
-    def _get_observations(self) -> Dict[str, np.ndarray]:
-        env_obs = np.zeros((self.num_agents, 24), dtype=np.float32)
-        env_roles = np.zeros((self.num_agents, 4), dtype=np.int32)
+        E, A = roles.shape
         
-        for a_idx in range(self.num_agents):
-            obs, roles = self.obs_builder.build_partial_obs(self.state, a_idx)
-            env_obs[a_idx] = obs
-            env_roles[a_idx] = roles
+        # Flatten batch dimensions for maximum GPU throughput
+        t_obs = torch.as_tensor(obs, dtype=torch.float32, device=self.device).view(E * A, -1)
+        t_global = torch.as_tensor(global_state, dtype=torch.float32, device=self.device).view(E * A, -1)
+        t_roles = torch.as_tensor(roles, dtype=torch.long, device=self.device).view(E * A)
+        t_masks = torch.as_tensor(action_masks, dtype=torch.bool, device=self.device).view(E * A, -1)
+
+        # --- Actor Pass ---
+        dist = self.actor(t_obs, t_roles, t_masks)
+        
+        if is_training:
+            actions = dist.sample()
+        else:
+            actions = torch.argmax(dist.probs, dim=-1)
             
-        # MAPPO Global State Construction: Flatten all local obs, copy it for all agents
-        flattened_global = env_obs.flatten() # Shape: (96,)
-        global_state = np.tile(flattened_global, (self.num_agents, 1)) # Shape: (4, 96)
-            
-        return {"obs": env_obs, "roles": env_roles, "global_state": global_state}
+        log_probs = dist.log_prob(actions)
 
-    def _get_action_masks(self) -> np.ndarray:
-        masks = np.zeros((self.num_agents, 8), dtype=bool)
-        for a_idx in range(self.num_agents):
-            masks[a_idx] = stateops.get_action_mask(self.state, a_idx)
-        return masks
+        # --- Critic Pass ---
+        norm_values = self.critic(t_global, t_roles)
+        # Denormalize immediately so the RolloutBuffer stores raw values for accurate PBRS math
+        raw_values = self.value_normalizer.denormalize(norm_values)
 
-    def _get_active_masks(self) -> np.ndarray:
-        active = np.zeros(self.num_agents, dtype=np.float32)
-        for a_idx in range(self.num_agents):
-            if self.state.hp[a_idx] > 0:
-                active[a_idx] = 1.0
-        return active
+        # Reshape back to Environment Format (E, A) and kick back to CPU NumPy
+        return (actions.view(E, A).cpu().numpy(), 
+                log_probs.view(E, A).cpu().numpy(), 
+                raw_values.view(E, A).cpu().numpy())
+
+    def update(self, batch: Dict[str, torch.Tensor]) -> Dict[str, float]:
+        """Runs the PPO Update on a randomized, flattened mini-batch"""
+        self.actor.train()
+        self.critic.train()
+
+        # Unpack batch (Already flattened to 1D/2D by RolloutBuffer generator)
+        b_obs = batch['obs'].to(self.device)
+        b_global = batch['global_state'].to(self.device)
+        b_roles = batch['roles'].to(self.device)
+        b_actions = batch['actions'].to(self.device)
+        b_log_probs = batch['log_probs'].to(self.device)
+        b_advs = batch['advantages'].to(self.device)
+        b_returns = batch['returns'].to(self.device)
+        b_act_masks = batch['action_masks'].to(self.device)
+        b_active_masks = batch['active_masks'].to(self.device) # Shape: (batch_size,)
+
+        # Safe divisor for active masking to prevent div-by-zero if everyone is dead in this batch
+        active_sum = torch.clamp(b_active_masks.sum(), min=1.0)
+
+        # ==========================================
+        # 1. CRITIC UPDATE (Isolated)
+        # ==========================================
+        self.value_normalizer.update(b_returns)
+        norm_returns = self.value_normalizer.normalize(b_returns)
+        
+        pred_values = self.critic(b_global, b_roles)
+        raw_critic_loss = func.huber_loss(pred_values, norm_returns, reduction='none')
+        
+        # Apply Active Mask (Ignore dead agents)
+        critic_loss = (raw_critic_loss * b_active_masks).sum() / active_sum
+
+        self.critic_optimizer.zero_grad()
+        critic_loss.backward()
+        nn.utils.clip_grad_norm_(self.critic.parameters(), self.max_grad_norm)
+        self.critic_optimizer.step()
+
+        # ==========================================
+        # 2. ACTOR UPDATE (Isolated)
+        # ==========================================
+        # Normalize advantages at the mini-batch level for stability
+        b_advs = (b_advs - b_advs.mean()) / (b_advs.std() + 1e-8)
+
+        dist = self.actor(b_obs, b_roles, b_act_masks)
+        new_log_probs = dist.log_prob(b_actions)
+        entropy = dist.entropy()
+
+        ratios = torch.exp(new_log_probs - b_log_probs)
+        surr1 = ratios * b_advs
+        surr2 = torch.clamp(ratios, 1.0 - self.eps_clip, 1.0 + self.eps_clip) * b_advs
+        
+        raw_actor_loss = -torch.min(surr1, surr2) - (self.ent_coef * entropy)
+        
+        # Apply Active Mask (Ignore dead agents so they don't corrupt the policy)
+        actor_loss = (raw_actor_loss * b_active_masks).sum() / active_sum
+
+        self.actor_optimizer.zero_grad()
+        actor_loss.backward()
+        nn.utils.clip_grad_norm_(self.actor.parameters(), self.max_grad_norm)
+        self.actor_optimizer.step()
+
+        return {
+            "actor_loss": actor_loss.item(), 
+            "critic_loss": critic_loss.item(),
+            "entropy": entropy.mean().item()
+        }

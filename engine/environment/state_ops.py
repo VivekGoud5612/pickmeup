@@ -2,6 +2,8 @@ import numpy as np
 from engine.environment.state import GameState
 from typing import Optional
 import copy
+from engine.utils.enums import Teams, ActionTypes
+from typing import Dict, Tuple, List
 
 class StateOperations:
 
@@ -128,7 +130,7 @@ class StateOperations:
 
 
     @staticmethod
-    def update_cooldown(state : GameState) -> None:
+    def update_cooldowns(state : GameState) -> None:
    ## Note that that 1 is broadcasted to match the whole size of state.cooldowns .. (num_agents, num_skills).
         state.cooldowns = np.maximum(0, state.cooldowns - 1)   # Normal max wont work for numpy arrays as state.cooldowns[agent_id] is also an array of 3 skill coolwdowns
 
@@ -166,11 +168,14 @@ class StateOperations:
         heroes_alive = np.any(state.hp[state.team_masks[Teams.HEROES]] > 0)
         monsters_alive = np.any(state.hp[state.team_masks[Teams.MONSTERS]] > 0)
 
-        if not heroes_alive :
+        if not heroes_alive and monsters_alive :
             return Teams.MONSTERS
 
+        elif not monsters_alive and heroes_alive:
+            return Teams.HEROES 
+
         else :
-            return Teams.HEROES
+            return None
 
         
     ### RANGE QUEURIES 
@@ -296,14 +301,13 @@ class StateOperations:
         # 2. STAMINA AND COOLDOWN RESOURCE VALIDATION
         # Index 5 maps to BASIC, 6 to UTILITY, 7 to ULTIMATE
         for act_idx in [5, 6, 7]:
-            stamina_cost = state.stamina_cost[agent_id, act_idx]
+            stamina_cost = state.skill_stamina_cost[agent_id, act_idx]
             cooldown_remaining = state.cooldowns[agent_id, act_idx - 5] # Cooldown maps to [0, 1, 2]
 
             if state.stamina[agent_id] < stamina_cost or cooldown_remaining > 0:
                 mask[act_idx] = False
 
         return mask
-
 
     
     @staticmethod 

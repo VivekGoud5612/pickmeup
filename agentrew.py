@@ -1,36 +1,26 @@
 from enum import IntEnum
 import numpy as np
+import torch
 class Shit(IntEnum):
     SHIT1 = 0
     SHIT2 = 1
     SHIT3 = 2
     SHIT4 = 3
 
+num_agents = 4
 
-shit_idx = 0
-#shit_value = Shit(shit_idx)
-role_idx = np.zeros(4, dtype = float)
-ga = False
-#role_idx[shit_value] = 1
-print(role_idx)
+hp = np.zeros(num_agents, dtype = np.float32)
 
-if shit_idx in Shit:
-    ga = True
-    print(ga)
+hp = np.array([2.4, 34.5, 53, 0])
+boolean = np.array([True, False, True , True])
 
-print(ga)
+print(hp > 0)
+print(torch.device("cpu"), isinstance(torch.device("cpu"), str), type(torch.device("cpu")))
+print(np.dtype(np.bool_).itemsize)
 
-role_idx[0] = 21
-role_idx[1] = 2
-role_idx[2] = 5
-role_idx[3] = 58
+gol = 2
+mol = 3
+jhol = 4
+if boolean:
+    print("yes")
 
-while 5 in role_idx:
-    print("id")
-    break
-
-array = np.zeros(4, dtype = bool)
-array[3] = True 
-print(role_idx[array])
-print(type(Shit.SHIT1))
-print(isinstance(Shit.SHIT1, int))

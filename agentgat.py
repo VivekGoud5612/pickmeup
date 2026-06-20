@@ -1,170 +1,156 @@
+import time
+import sys
 import numpy as np
-from typing import Tuple, Dict, Any
+import torch
+from torch.utils.tensorboard import SummaryWriter
 
-# Import your core engine components
-from engine.environment.state import GameState
-from engine.environment.state_ops import StateOperations as stateops
-from engine.environment.action_sequencer import ActionSequencer
-from engine.agents.policy.reward_calculator import RewardCalculator
-from engine.agents.policy.observation_builder import ObservationBuilder
+# Import your custom modules
+from engine.environment.shared_vector_env import SharedSubprocessVectorEnv
+from engine.environment.env import Env 
+from engine.agents.policy.trainer import MAPPOAgent
+from engine.agents.policy.rollout import RolloutBuffer
 
-class RaidEnv:
-    def __init__(self, grid_size: int = 20, max_steps: int = 200):
-        self.grid_size = grid_size
-        self.max_steps = max_steps
-        self.num_agents = 4
-        self.step_count = 0
+def make_env():
+    return Env(grid_size=20, max_steps=200)
 
-        # Instantiate the stateless backend singletons
-        self.state = GameState(grid_size=self.grid_size)
-        self.reward_calc = RewardCalculator()
-        self.obs_builder = ObservationBuilder(grid_size=self.grid_size)
+def main():
+    # --- 1. Hyperparameters & Setup ---
+    NUM_ENVS = 8
+    NUM_STEPS = 200
+    NUM_AGENTS = 4
+    TOTAL_TIMESTEPS = 5_000_000
+    BATCH_SIZE = 1024 # Or whatever fits your flat_size cleanly
+    PPO_EPOCHS = 4
+    
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"[*] Initializing MAPPO Training on {device}...")
 
-        # Mapping dictionary based on your reference
-        self.agents = {
-            0: "Tank",
-            1: "Dealer",
-            2: "Healer",
-            3: "Boss"
-        }
+    # Initialize Logger
+    run_name = f"MAPPO_GridWorld_{int(time.time())}"
+    writer = SummaryWriter(f"runs/{run_name}")
 
-    def reset(self) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:
-        """
-        Resets the physical environment to its starting state.
-        """
-        self.step_count = 0
-        self.state.reset()
+    # Initialize Components
+    env_fns = [make_env for _ in range(NUM_ENVS)]
+    vector_env = SharedSubprocessVectorEnv(env_fns, num_agents=NUM_AGENTS)
+    
+    agent = MAPPOAgent(device=device)
+    buffer = RolloutBuffer(
+        num_steps=NUM_STEPS, num_envs=NUM_ENVS, num_agents=NUM_AGENTS,
+        obs_shape=(24,), local_role_id_shape=(), global_state_shape=(96,), action_shape=(),
+        device=device
+    )
 
-        # Seed initial footprint into the exploration tracker
-        for agent_idx in range(self.num_agents):
-            x, y = self.state.positions[agent_idx]
-            team = self.state.teams[agent_idx]
-            self.state.team_visited_tiles[team, int(x), int(y)] = True
+    global_step = 0
+    start_time = time.time()
 
-        # Generate initial frames
-        obs_dict = self._get_observations()
+    try:
+        # --- 2. Initial Reset ---
+        print("[*] Booting Shared Workers and Resetting Environments...")
+        obs_dict, info = vector_env.reset()
         
-        info = {
-            "action_masks": self._get_action_masks(),
-            "active_masks": self._get_active_masks(),
-            "handcrafted_potential": self._get_handcrafted_potentials()
-        }
-
-        return obs_dict, info
-
-    def step(self, actions: np.ndarray) -> Tuple[Dict[str, np.ndarray], np.ndarray, np.ndarray, bool, Dict[str, Any]]:
-        """
-        Executes a single frame of the simulation. No value functions used here.
-        """
-        self.step_count += 1
+        current_obs = obs_dict['obs']
+        current_global = obs_dict['global_state']
+        current_roles = obs_dict['roles']
+        current_action_masks = info['action_mask']
+        current_active_masks = info['active_mask']
         
-        # 1. Snapshot State for Reward Calculation
-        old_state_snapshot = self.state.clone_snapshot()
+        print("[*] Training Loop Started.")
         
-        # 2. Clear Transient Trackers
-        self.state.exploration_bonus_triggered.fill(0.0)
-
-        # 3. Pre-process actions against strict mechanics masks
-        processed_mask = np.ones(self.num_agents, dtype=bool)
-        current_masks = self._get_action_masks()
-        
-        for a_idx in range(self.num_agents):
-            chosen_action = actions[a_idx]
-            if not current_masks[a_idx, chosen_action]:
-                # Invalid action attempted
-                processed_mask[a_idx] = False
-
-        # 4. Resolve the Physics & Mechanics Engine
-        ActionSequencer.resolve_step(self.state, actions)
-
-        # 5. Calculate RAW Combat Rewards (No Neural Network Values)
-        # Note: You'll need to ensure your RewardCalculator has a method that just gets the raw combat additions
-        combat_rewards = np.zeros(self.num_agents, dtype=np.float32)
-        
-        if old_state_snapshot.hp[1] > 0: # Dealer
-            self.reward_calc._combat_reward_for_dealer(self.state, combat_rewards)
-        if old_state_snapshot.hp[0] > 0: # Tank
-            self.reward_calc._combat_reward_for_tank(self.state, combat_rewards)
-        if old_state_snapshot.hp[2] > 0: # Healer
-            self.reward_calc._combat_reward_for_healer(self.state, combat_rewards)
-        if old_state_snapshot.hp[3] > 0: # Boss
-            self.reward_calc._combat_reward_for_boss(self.state, combat_rewards)
-
-        # 6. Evaluate Terminations (Win/Loss) & Truncations (Time Limit)
-        is_terminal = stateops.is_terminal(self.state)
-        truncated = bool(self.step_count >= self.max_steps)
-
-        terminated_array = np.zeros(self.num_agents, dtype=np.float32)
-        for a_idx in range(self.num_agents):
-            was_alive = old_state_snapshot.hp[a_idx] > 0
-            is_alive = self.state.hp[a_idx] > 0
-            if (was_alive and not is_alive) or is_terminal:
-                terminated_array[a_idx] = 1.0
-
-        # Add win/death penalties to combat_rewards directly based on terminations
-        for a_idx in range(self.num_agents):
-            if terminated_array[a_idx] == 1.0 and is_terminal:
-                if a_idx == self.reward_calc.boss_id:
-                    combat_rewards[self.reward_calc.boss_id] -= self.reward_calc.death_penalty
-                else:
-                    combat_rewards[a_idx] += self.reward_calc.win_bounty
-            elif terminated_array[a_idx] == 1.0:
-                combat_rewards[a_idx] += self.reward_calc.death_penalty
-
-        # 7. Package Outputs
-        next_obs_dict = self._get_observations()
-
-        info = {
-            "action_masks": self._get_action_masks(),
-            "active_masks": self._get_active_masks(),
-            # Expose the pure heuristic potential for main.py to blend with Values
-            "handcrafted_potential": self._get_handcrafted_potentials() 
-        }
-
-        return next_obs_dict, combat_rewards, terminated_array, truncated, info
-
-    def close(self):
-        pass
-
-    # =====================================================================
-    # INTERNAL HELPERS
-    # =====================================================================
-    def _get_observations(self) -> Dict[str, np.ndarray]:
-        """Harvests complete environment vision arrays."""
-        env_obs = np.zeros((self.num_agents, 24), dtype=np.float32)
-        env_roles = np.zeros((self.num_agents, 4), dtype=np.int32)
-        
-        for a_idx in range(self.num_agents):
-            obs, roles = self.obs_builder.build_partial_obs(self.state, a_idx)
-            env_obs[a_idx] = obs
-            env_roles[a_idx] = roles
+        # --- 3. Main Training Loop ---
+        while global_step < TOTAL_TIMESTEPS:
             
-        return {"obs": env_obs, "roles": env_roles}
-
-    def _get_action_masks(self) -> np.ndarray:
-        """Extracts strict binary rules for available moves from StateOperations."""
-        action_masks = np.zeros((self.num_agents, 8), dtype=bool)
-        for a_idx in range(self.num_agents):
-            action_masks[a_idx] = stateops.get_action_mask(self.state, a_idx)
-        return action_masks
-
-    def _get_active_masks(self) -> np.ndarray:
-        """Extracts active status (1.0 if alive, 0.0 if dead)."""
-        active_masks = np.zeros(self.num_agents, dtype=np.float32)
-        for a_idx in range(self.num_agents):
-            if stateops.is_alive(self.state, a_idx):
-                active_masks[a_idx] = 1.0
-        return active_masks
-
-    def _get_handcrafted_potentials(self) -> np.ndarray:
-        """Calculates the heuristic state values (Φ_handcrafted)."""
-        hero_pot, boss_pot = self.reward_calc._get_handcrafted_potential(self.state)
-        potentials = np.zeros(self.num_agents, dtype=np.float32)
-        
-        for a_idx in range(self.num_agents):
-            if self.state.roles[a_idx] == 3: # Boss
-                potentials[a_idx] = boss_pot
-            else:
-                potentials[a_idx] = hero_pot
+            # --- PHASE 1: ROLLOUT ---
+            for step in range(NUM_STEPS):
+                global_step += (NUM_ENVS * NUM_AGENTS)
                 
-        return potentials
+                # Get Actions (Fast Forward Pass)
+                actions, log_probs, values = agent.get_actions_and_values(
+                    obs=current_obs,
+                    global_state=current_global,
+                    roles=current_roles,
+                    action_masks=current_action_masks,
+                    is_training=True
+                )
+                
+                # Step Environments
+                next_obs_dict, rewards, dones, truncated, next_info = vector_env.step(actions)
+                
+                # Store Data
+                buffer.store(
+                    local_obs=current_obs,
+                    local_ids=current_roles,
+                    global_state=current_global,
+                    actions=actions,
+                    log_probs=log_probs,
+                    rewards=rewards,
+                    dones=dones,
+                    values=values,
+                    action_masks=current_action_masks,
+                    active_masks=current_active_masks
+                )
+                
+                # Update Pointers
+                current_obs = next_obs_dict['obs']
+                current_global = next_obs_dict['global_state']
+                current_roles = next_obs_dict['roles']
+                current_action_masks = next_info['action_mask']
+                current_active_masks = next_info['active_mask']
+
+            # --- PHASE 2: GAE CALCULATION ---
+            # Bootstrap value for the last state
+            _, _, next_values = agent.get_actions_and_values(
+                obs=current_obs, global_state=current_global, 
+                roles=current_roles, action_masks=current_action_masks, is_training=True
+            )
+            
+            buffer.compute_returns_and_advantages(next_values=next_values, next_dones=dones)
+
+            # --- PHASE 3: PPO UPDATE ---
+            avg_actor_loss, avg_critic_loss, avg_entropy = 0.0, 0.0, 0.0
+            update_steps = 0
+
+            for _ in range(PPO_EPOCHS):
+                data_generator = buffer.generate_batch(batch_size=BATCH_SIZE)
+                for mini_batch in data_generator:
+                    loss_dict = agent.update(mini_batch)
+                    
+                    avg_actor_loss += loss_dict['actor_loss']
+                    avg_critic_loss += loss_dict['critic_loss']
+                    avg_entropy += loss_dict['entropy']
+                    update_steps += 1
+
+            # Average out the losses for logging
+            avg_actor_loss /= update_steps
+            avg_critic_loss /= update_steps
+            avg_entropy /= update_steps
+
+            buffer.clear()
+
+            # --- PHASE 4: LOGGING ---
+            sps = int(global_step / (time.time() - start_time))
+            
+            writer.add_scalar("Loss/Actor", avg_actor_loss, global_step)
+            writer.add_scalar("Loss/Critic", avg_critic_loss, global_step)
+            writer.add_scalar("Metrics/Entropy", avg_entropy, global_step)
+            writer.add_scalar("Metrics/SPS", sps, global_step)
+            
+            # Log average reward to see if they are actually learning
+            writer.add_scalar("Environment/Mean_Reward", np.mean(buffer.rewards), global_step)
+
+            if (global_step // (NUM_ENVS * NUM_AGENTS * NUM_STEPS)) % 10 == 0:
+                print(f"Step: {global_step} | SPS: {sps} | Ret: {np.mean(buffer.rewards):.2f} | Act Loss: {avg_actor_loss:.4f} | Crit Loss: {avg_critic_loss:.4f} | Ent: {avg_entropy:.4f}")
+
+    # --- 5. CRITICAL CLEANUP ---
+    except KeyboardInterrupt:
+        print("\n[!] Training manually interrupted by user.")
+    except Exception as e:
+        print(f"\n[CRITICAL ERROR] Training crashed:\n{e}")
+    finally:
+        print("[*] Cleaning up Shared Memory and closing workers...")
+        vector_env.close()
+        writer.close()
+        print("[*] Shutdown complete. Exiting.")
+        sys.exit(0)
+
+if __name__ == "__main__":
+    main()

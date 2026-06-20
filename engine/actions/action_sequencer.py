@@ -1,9 +1,8 @@
 from typing import List, Dict, Any 
 from engine.environment.state_ops import StateOperations as stateops
 from engine.environment.state import GameState 
-from engine.actions.action_handler import ActionHandler
-from engine.actions.action_handler import ActionTypes 
-from engine.agents.agent_data import AgentRole
+from engine.actions.action import ActionHandler
+from engine.utils.enums import ActionTypes, AgentRole
 import numpy as np
 
 
@@ -15,7 +14,7 @@ class ActionSequencer:
         ## Actions are basically a list of Action Types as we changed them back in base_agent , where if we get an action we map it to our map dictionary...
         
         state.is_blocking.fill(False)  ## We set all the blockings to False at each new step, because the tank blocks once per step and has a cooldown. This needs to reset or else the tank stays on block the whole episode...
-        state.invincible.fill(False)
+        state.is_invincible.fill(False)
         state.damage_dealt.fill(0.0)
         state.effective_heal.fill(0.0)
         state.damage_reduction_by_block.fill(0.0)
@@ -141,6 +140,8 @@ class ActionSequencer:
 
         state.positions[agent_id] = new_pos ## If none of that happens then we can safely update the agents positions..
 
+        x,y = new_pos
+        team = state.teams[agent_id]
         if not state.team_visited_tiles[team, x, y]:   ## direct lookup, no need for 
             state.team_visited_tiles[team, x, y] = True
             state.exploration_bonus_triggered[agent_id] = 1.0  ## To tell reward engine to Reward the agent for exploration...

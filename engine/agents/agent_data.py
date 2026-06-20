@@ -1,18 +1,7 @@
 from dataclasses import dataclass
 import random
-from engine.environment.env import AgentID
-from enum import IntEnum 
 from typing import Dict, Any
-
-class AgentRole(IntEnum):
-    TANK = 0
-    DEALER = 1
-    HEALER = 2
-    BOSS = 3
-
-class Teams(IntEnum):
-    HEROES = 0
-    VILLIANS = 1
+from engine.utils.enums import SkillTypes, AgentID, AgentRole, Teams
 
 @dataclass
 class Skill:
@@ -21,17 +10,6 @@ class Skill:
     cooldown:int
     stamina_cost : int
     strength_of_skill : float
-
-class SkillTypes(IntEnum):
-    BASIC = 0
-    HEAL = 5
-    BLOCK = 1
-    AOE = 8
-    SPECIAL = 4
-    INVINCIBLE = 2
-    REGENERATE = 7
-    ALL_HEAL = 6
-    PIERCE = 3
 
 @dataclass 
 class Attributes:
@@ -89,7 +67,7 @@ class AgentIdentity:
         },
 
         AgentRole.BOSS : {
-            "max_hp" : 1000,
+            "max_hp" : 200,
             'attributes' : Attributes(strength = 40, defence = 30, stamina = 100, recovery_rate = 7),
             "skills": {
                 SkillTypes.BASIC : Skill(min_range = 1, max_range = 2, cooldown = 3, stamina_cost = 5, strength_of_skill = 0.25),
