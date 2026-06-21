@@ -2,7 +2,9 @@ import torch
 import numpy as np 
 from engine.environment.env import Env 
 from engine.environment.state import GameState 
-from engine.environment.observation import ObservationBuilder 
+from engine.environment.observation import ObservationBuilder
+from engine.utils.enums import AgentID
+from engine.agents.policy.trainer import MAgent  
 
 
 class Inference:
@@ -55,4 +57,25 @@ class Inference:
         self.obs, _, dones, truncated, self.info = self.env.step(flat_actions)
 
         state = self.env.state  ## Store the state class after step.. so that we can send hte JSON to frontend via router..3.
-        game_state_payload
+        game_state_payload = {
+            "step": self.env.step_count,
+            "heroes": {
+                    agent : {
+                        "x": int(state.positions[AgentID(agent)][0]), 
+                        "y": int(state.positions[AgentID(agent)][1]), 
+                        "hp": float(state.hp[AgentID(agent)]), 
+                        "max": float(state.max_h[AgentID(agent)]),
+                        'stamina' : float(state.stamina[AgentID(agent)]),
+                        'cooldowns' : {
+                            "basic" : float(state.cooldowns[AgentID(agent)][0]),
+                            "utility" : float(state.cooldowns[AgentID(agent)][1]),
+                            "ultimate" : float(state.cooldowns[AgentID(agent)][2]),
+                        }
+                    }  for agent in ['Tank', 'Dealer', 'Healer', 'Boss']
+            }
+        }
+
+        if self.info['terminal'] or all(doens) or truncated:
+            self.obs_dict, self.info = self.env.reset()
+
+        return game_state_payload
