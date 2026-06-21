@@ -42,7 +42,7 @@ class Inference:
             obs_array = np.expand_dims(current_obs, axis = 0)  ## Shape (1, 4, 24)
             roles_array = np.expand_dims(current_roles, axis = 0)
             global_array = np.expand_dims(current_global, axis = 0)
-            action_mask_array = np.expand_dims(dummy_action_mask, axis = 0)
+            action_masks_array = np.expand_dims(dummy_action_mask, axis = 0)
 
             actions, _, _ = self.agent.get_actions_and_values(  ## Shape (1,4)
                 obs = obs_array,
@@ -66,7 +66,8 @@ class Inference:
                         "hp": float(state.hp[AgentID(agent)]), 
                         "max": float(state.max_h[AgentID(agent)]),
                         'stamina' : float(state.stamina[AgentID(agent)]),
-                        'cooldowns' : {
+                        'max_stamina' : float(state.max_stamina[AgentID(agent)]),
+                        'cooldowns': {
                             "basic" : float(state.cooldowns[AgentID(agent)][0]),
                             "utility" : float(state.cooldowns[AgentID(agent)][1]),
                             "ultimate" : float(state.cooldowns[AgentID(agent)][2]),
@@ -75,7 +76,7 @@ class Inference:
             }
         }
 
-        if self.info['terminal'] or all(doens) or truncated:
+        if self.info['terminal'] or all(dones) or truncated:
             self.obs_dict, self.info = self.env.reset()
 
         return game_state_payload

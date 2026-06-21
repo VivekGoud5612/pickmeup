@@ -9,6 +9,5 @@ wheels/
 # Virtual environments
 .venv
 runs/
-checkpoints/
 saved_models/
 
