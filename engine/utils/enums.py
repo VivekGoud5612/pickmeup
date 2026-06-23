@@ -1,5 +1,6 @@
 from enum import IntEnum 
 
+#Need to remove this afterwards
 class AgentID(IntEnum):
     TANK = 0
     DEALER = 1
@@ -37,11 +38,11 @@ class SkillTypes(IntEnum):
     ALL_HEAL = 6
     PIERCE = 3
 
-class AgentID(IntEnum):
-    TANK = 0
-    DEALER = 1
-    HEALER = 2
-    BOSS = 3
+# class AgentID(IntEnum):
+#     TANK = 0
+#     DEALER = 1
+#     HEALER = 2
+#     BOSS = 3
 
 class ElementTypes(IntEnum):
 

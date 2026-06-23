@@ -10,7 +10,7 @@ router = APIRouter(prefix = '/ws', tags = ['Combat'])
 
 @router.websocket("/combat")
 async def inference_endpoint(websocket : WebSocket):  ## A websocket endpoint for the frontend to access
-    await ws.accept()   ## Awaiting a conection of a websocket connection to this endpoint
+    await websocket.accept()   ## Awaiting a conection of a websocket connection to this endpoint
     print("[*]Viewer Connected")   ## If the await connection ran then we check via this message
 
     try:

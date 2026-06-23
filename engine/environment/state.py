@@ -1,3 +1,4 @@
+import random
 from typing import Dict, List, Tuple, Any
 from engine.agents.agent_data import AgentIdentityFormat, AgentIdentity
 from engine.utils.enums import AgentRole, Teams, SkillTypes, ActionTypes, AgentID
@@ -200,14 +201,14 @@ class GameState:
                 pos = (random.randint(0, self.grid_size - 1), random.randint(0, 2))   ## If the randomized generated position is already occupied then we run the loop till we get a non occupied position
             self.positions[agent_id] = pos
 
-        elif identity.team == Tems.MONSTERS:
+        elif identity.team == Teams.MONSTERS:
             self.positions[agent_id] = (random.randint(self.grid_size-3, self.grid_size-1), random.randint(self.grid_size-3, self.grid_size-1)) ##  Assing a random position of boss in the last 3*3 grid of that big 20*20 grid
 
         self.positions[agent_id] = np.array(start_position)
         self.hp[agent_id] = self.max_hp[agent_id] 
         self.stamina[agent_id] = self.max_stamina[agent_id]
         
-        self.team_masks[team][agent_id] = True 
+        self.team_masks[identity.team][agent_id] = True 
         self.team_visited_tiles[self.teams[agent_id]] = self.positions[agent_id]
 
         role = identity.role 

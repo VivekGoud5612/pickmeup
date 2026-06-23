@@ -1,5 +1,5 @@
-from engine.agents.agent_data import AgentIdentity
-from engine.agents.policy.agent import Agent
+from engine.agents.agent_data import AgentIdentity, AgentRole
+from engine.agents.policy.trainer import MAgent
 from typing import List
 from engine.environment.observation import Observation
 from engine.actions.action import ActionTypes
@@ -12,7 +12,7 @@ class BaseAgent:
     def __init__(self, agent_id : AgentID, role : AgentRole):  ## We create 4 objects of this base agent in init of env
       
         self.identity = AgentIdentity.create_identity(agent_id, role)  # Here we create a pure object of the agent, and the copy the information to state as pure arrays..
-        self.agent = Agent(agent_id, role)
+        self.agent = MAgent(agent_id, role)
 
     def get_action_and_log_probs(self, state : GameState, observation : np.ndarray, role_ids : np.ndarray, action_mask : np.ndarray, is_training : bool):
         
@@ -25,8 +25,8 @@ class BaseAgent:
             action_type_enum = ActionTypes(action_idx)  ## If valid action - action type enum is equal to the number
         
         else:
-            action_type_enum = Actiontypes.WAIT 
-            state.invalid_actions[agent_id] = True 
+            action_type_enum = ActionTypes.WAIT 
+            state.invalid_actions[AgentID] = True 
 
         return action_type_enum, log_probs 
 

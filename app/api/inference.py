@@ -31,10 +31,10 @@ class Inference:
     def get_next_frame(self): ## That is a function for the websocket endpoint to get the next state after a step
 
         current_obs = self.obs['obs']
-        current_roles = self.obs['roles']
-        current_global = self.obs['global_state']
+        current_roles = self.obs['role_ids']
+        current_global = self.obs['global_state_obs']
         
-        dummy_action_mask = np.ones(self.env.num_agents, self.env.state.NUM_ACTIONS, dtype = np.bool_)
+        dummy_action_mask = np.ones((self.env.num_agents, self.env.state.NUM_ACTIONS), dtype = np.bool_)
         
         with torch.no_grad():
              ## Add batch dim to these arrays  .. as the network is tuned to work on 3D Data...
@@ -61,20 +61,36 @@ class Inference:
             "step": self.env.step_count,
             "heroes": {
                     agent : {
-                        "x": int(state.positions[AgentID(agent)][0]), 
-                        "y": int(state.positions[AgentID(agent)][1]), 
-                        "hp": float(state.hp[AgentID(agent)]), 
-                        "max": float(state.max_h[AgentID(agent)]),
-                        'stamina' : float(state.stamina[AgentID(agent)]),
-                        'max_stamina' : float(state.max_stamina[AgentID(agent)]),
+                        "x": int(state.positions[agent][0]), 
+                        "y": int(state.positions[agent][1]), 
+                        "hp": float(state.hp[agent]), 
+                        "max": float(state.max_hp[agent]),
+                        'stamina' : float(state.stamina[agent]),
+                        'max_stamina' : float(state.max_stamina[agent]),
                         'cooldowns': {
-                            "basic" : float(state.cooldowns[AgentID(agent)][0]),
-                            "utility" : float(state.cooldowns[AgentID(agent)][1]),
-                            "ultimate" : float(state.cooldowns[AgentID(agent)][2]),
+                            "basic" : float(state.cooldowns[agent][0]),
+                            "utility" : float(state.cooldowns[agent][1]),
+                            "ultimate" : float(state.cooldowns[agent][2]),
                         }
-                    }  for agent in ['Tank', 'Dealer', 'Healer', 'Boss']
+                    }  for agent in [0, 1, 2]
+            },
+            "monsters": {
+                    agent : {
+                        "x": int(state.positions[agent][0]), 
+                        "y": int(state.positions[agent][1]), 
+                        "hp": float(state.hp[agent]), 
+                        "max": float(state.max_hp[agent]),
+                        'stamina' : float(state.stamina[agent]),
+                        'max_stamina' : float(state.max_stamina[agent]),
+                        'cooldowns': {
+                            "basic" : float(state.cooldowns[agent][0]),
+                            "utility" : float(state.cooldowns[agent][1]),
+                            "ultimate" : float(state.cooldowns[agent][2]),
+                        }
+                    } for agent in [3]
+            } 
             }
-        }
+        
 
         if self.info['terminal'] or all(dones) or truncated:
             self.obs_dict, self.info = self.env.reset()
