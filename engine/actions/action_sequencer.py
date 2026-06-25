@@ -1,5 +1,5 @@
 from typing import Dict,Tuple,Any
-from pickmeup.engine.actions.action_handler import ActionHandler
+from engine.actions.action_handler import ActionHandler
 
 class Action_Sequencer:
 
