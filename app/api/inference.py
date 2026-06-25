@@ -16,11 +16,14 @@ class Inference:
         self.env = Env(grid_size = 20, max_steps = 200)  ## Here we just initialize a single env because this is not trainingand there is no need for those many envs, there isonly one env
         self.obs, info = self.env.reset()  ## Reset the env during this class initialization so that the step can go on in a loop
 
-        self.agent = MAgent(device = self.device)
+        self.agents = MAgent(device = self.device)
 
         if checkpoint_path:  ## IF the checkpoint path is not None, that is if there is a saved model then 
             checkpoint = torch.load(checkpoint_path, map_location = self.device) ## load the weihts from the path onto the device
-            self.agent.actor.load_state_dict(checkpoint['actor_state_dict'])  ## WE load the actor weights because right now there is no need for critic, as the actor is already trained.. and we need only actions
+            self.agents.swarm.tank_actor.load_state_dict(checkpoint['tank_actor'])  ## WE load the actor weights because right now there is no need for critic, as the actor is already trained.. and we need only actions
+            self.agents.swarm.dealer_actor.load_state_dict(checkpoint['dealer_actor'])
+            self.agents.swarm.healer_actor.load_state_dict(checkpoint['healer_actor'])
+            self.agents.swarm.boss_actor.load_state_dict(checkpoint['boss_actor'])
 
             print(f"[*] We loaded the saved model at checkpoint : {checkpoint_path}")
 
@@ -31,22 +34,19 @@ class Inference:
     def get_next_frame(self): ## That is a function for the websocket endpoint to get the next state after a step
 
         current_obs = self.obs['obs']
-        current_roles = self.obs['roles']
-        current_global = self.obs['global_state']
+        current_global = self.obs['global_state_obs']
         
-        dummy_action_mask = np.ones(self.env.num_agents, self.env.state.NUM_ACTIONS, dtype = np.bool_)
+        dummy_action_mask = np.ones((self.env.num_agents, self.env.state.NUM_ACTIONS), dtype = np.bool_)
         
         with torch.no_grad():
              ## Add batch dim to these arrays  .. as the network is tuned to work on 3D Data...
 
             obs_array = np.expand_dims(current_obs, axis = 0)  ## Shape (1, 4, 24)
-            roles_array = np.expand_dims(current_roles, axis = 0)
             global_array = np.expand_dims(current_global, axis = 0)
             action_masks_array = np.expand_dims(dummy_action_mask, axis = 0)
 
-            actions, _, _ = self.agent.get_actions_and_values(  ## Shape (1,4)
+            actions, _, _, _ = self.agents.get_actions_and_values(  ## Shape (1,4)
                 obs = obs_array,
-                roles = roles_array,
                 global_state = global_array,
                 action_masks = action_masks_array,
                 is_training = False,
@@ -59,20 +59,20 @@ class Inference:
         state = self.env.state  ## Store the state class after step.. so that we can send hte JSON to frontend via router..3.
         game_state_payload = {
             "step": self.env.step_count,
-            "heroes": {
-                    agent : {
-                        "x": int(state.positions[AgentID(agent)][0]), 
-                        "y": int(state.positions[AgentID(agent)][1]), 
-                        "hp": float(state.hp[AgentID(agent)]), 
-                        "max": float(state.max_h[AgentID(agent)]),
-                        'stamina' : float(state.stamina[AgentID(agent)]),
-                        'max_stamina' : float(state.max_stamina[AgentID(agent)]),
+            "agents": {
+                    agent.name : {
+                        "x": int(state.positions[agent][0]), 
+                        "y": int(state.positions[agent][1]), 
+                        "hp": float(state.hp[agent]), 
+                        "max_hp": float(state.max_hp[agent]),
+                        'stamina' : float(state.stamina[agent]),
+                        'max_stamina' : float(state.max_stamina[agent]),
                         'cooldowns': {
-                            "basic" : float(state.cooldowns[AgentID(agent)][0]),
-                            "utility" : float(state.cooldowns[AgentID(agent)][1]),
-                            "ultimate" : float(state.cooldowns[AgentID(agent)][2]),
+                            "basic" : float(state.cooldowns[agent][0]),
+                            "utility" : float(state.cooldowns[agent][1]),
+                            "ultimate" : float(state.cooldowns[agent][2]),
                         }
-                    }  for agent in ['Tank', 'Dealer', 'Healer', 'Boss']
+                    }  for agent in AgentID
             }
         }
 

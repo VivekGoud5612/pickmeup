@@ -172,6 +172,8 @@ class RewardCalculator:
 
     def _combat_reward_for_healer(self, state : GameState, rewards : np.ndarray):
 
+        rewards[self.healer_id] += state.damage_dealt[self.healer_id]  ## As healer also has a attack spell (basic we can do that)
+
         effective_heal = state.effective_heal[self.healer_id]
         rewards[self.healer_id] += effective_heal * 0.8
 

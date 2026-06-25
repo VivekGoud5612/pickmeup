@@ -3,13 +3,14 @@ import torch
 from torch.distributions import Categorical 
 import torch.nn as nn
 import torch.nn.functional as func 
-from engine.agents.policy.network import Actor, Critic
 import torch.optim as optim
 from engine.environment.state import GameState
 from engine.environment.observation import ObservationBuilder
 import numpy as np
 from typing import Tuple, Dict
 from engine.agents.policy.normalizer import ValueNormalizer
+from engine.agents.policy.swarm_manager import SwarmManager
+from engine.utils.enums import AgentRole
 
 GAMMA = 0.95
 LAMBDA = 0.95
@@ -23,101 +24,115 @@ class MAgent:
     def __init__(self, device : torch.device, lr_actor : float = 3e-4, lr_critic : float = 1e-3):
 
         self.device = device 
-        self.actor = Actor(ObservationBuilder.OBS_SIZE, GameState.NUM_ACTIONS).to(self.device)  #Role embedding size is already written or defined there..
-        self.critic = Critic(ObservationBuilder.GLOBAL_STATE_SIZE).to(self.device)
-
-        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr = lr_actor, eps = 1e-5)
-        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr = lr_critic, eps = 1e-5)
-
         self.eps_clip = 0.2  ## Epsilon clipping , used at last... for surr 2 that is to limit the actor updates
-        self.max_grad_norm = 10.0
-
         self.value_normalizer = ValueNormalizer()
 
+        self.swarm = SwarmManager()
+        self.swarm = self.swarm.to(self.device)
+
     @torch.no_grad()
-    def get_actions_and_values(self, obs: np.ndarray, global_state: np.ndarray, roles: np.ndarray, action_masks: np.ndarray, is_training: bool = True) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Natively multi-dimensional inference for Rollout Collection"""
-        self.actor.eval()
-        self.critic.eval()
+    def get_actions_and_values(self, obs: np.ndarray, global_state: np.ndarray, action_masks: np.ndarray, is_training: bool = True) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         
-        # NO MORE FLATTENING. Pass the exact environment tracking shapes:
-        # obs: (num_envs, num_agents, 24) | global_state: (num_envs, num_agents, 96)
-        # roles: (num_envs, num_agents)  | action_masks: (num_envs, num_agents, 8)
         t_obs = torch.as_tensor(obs, dtype=torch.float32, device=self.device)
-        t_global = torch.as_tensor(global_state, dtype=torch.float32, device=self.device)
-        t_roles = torch.as_tensor(roles, dtype=torch.long, device=self.device)
+        t_global_state = torch.as_tensor(global_state, dtype=torch.float32, device=self.device)
         t_masks = torch.as_tensor(action_masks, dtype=torch.bool, device=self.device)
 
-        # --- Actor Pass (Preserves leading dimensions automatically) ---
-        dist = self.actor(t_obs, t_roles, t_masks)
-        
+        dists, values, intent = self.swarm.get_actions_and_values(t_obs, t_global_state, t_masks)
+
+        tank_dist, healer_dist, dealer_dist, boss_dist = dists  ## Shape (num_evns, ) 
+        tank_val, healer_val, dealer_val, boss_val = values
+
         if is_training:
-            actions = dist.sample()            # Shape: (num_envs, num_agents)
+            tank_action = tank_dist.sample()
+            healer_action = healer_dist.sample()
+            dealer_action = dealer_dist.sample()
+            boss_action = boss_dist.sample()            
         else:
-            actions = torch.argmax(dist.probs, dim=-1) # Shape: (num_envs, num_agents)
+            tank_action = torch.argmax(tank_dist.probs, dim = -1)
+            healer_action = torch.argmax(healer_dist.probs, dim = -1)
+            dealer_action = torch.argmax(dealer_dist.probs, dim = -1)  ## Why are we taking the last dim of that argmax ... We will get the argument where the prob is max but why dim -1
+            boss_action = torch.argmax(boss_dist.probs, dim = -1) ## That is because our shape is (num_envs, 8) so we are telling argmax to max over those actions and not along the num_envs * num_agents..
+
+        # Get log probabilities (needed for PPO update)
+        tank_log_prob = tank_dist.log_prob(tank_action)
+        healer_log_prob = healer_dist.log_prob(healer_action)
+        dealer_log_prob = dealer_dist.log_prob(dealer_action)
+        boss_log_prob = boss_dist.log_prob(boss_action)
+
+        # 4. RECOMBINE INTO (num_envs, 4) FOR MAIN.PY
+        # torch.stack takes our 1D arrays and lines them up as columns!
+        actions = torch.stack([tank_action, healer_action, dealer_action, boss_action], dim=1) # Shape (num_envs, num_agents,).. but why dim = 1?? ALong the nd dimension we are saying to stack.. so along columns...
+        log_probs = torch.stack([tank_log_prob, healer_log_prob, dealer_log_prob, boss_log_prob], dim=1)
+        state_values = torch.stack([tank_val, healer_val, dealer_val, boss_val], dim=1)
+
+        # ----------------------------------------------------
+        # THE FIX: Expand the intent to cover all 4 agent slots
+        # unsqueeze(1) makes it (8, 1, 24)
+        # expand(-1, 4, -1) stretches it to (8, 4, 24)
+        # ----------------------------------------------------
+        intent_expanded = intent.unsqueeze(1).expand(-1, 4, -1)  ## (-1 - let this dim stay as is).. Need to revisit torchs dynamics on how GPU reads this.. (doesnt copy data physically but reads 4 times.. need to read)
+
+        return actions.detach().cpu().numpy(), log_probs.detach().cpu().numpy(), state_values.detach().cpu().numpy(), intent_expanded.detach().cpu().numpy()
+
+
+    def update(self, batch : Dict[str, torch.Tensor], ent_coef : float, ppo_epochs : int = 4) -> Dict[str, float]:  # A single update method for a single batch by a single batch creator..
+
+        total_actor_loss = {}
+        total_critic_loss = {}
+
+        running_actor = {r : 0.0 for r in AgentRole}
+        running_critic = {r : 0.0 for r in AgentRole}  ## These are the sum of losses of individual agents for 4 epochs.. so we take the sum and average out per agent..
+        total_entropy = 0.0
+
+        ### Unpacking batch elements.. note that the batch shape is (batch_szie, num_agnets, ..)
+        for step in range(ppo_epochs):
+            for role in AgentRole:
+                b_obs = batch['obs'][:, role, :]              # Shape: (mini_batch_size, 24)
+                b_global = batch['global_state'][:, role, :]     # Shape: (mini_batch_size, 96)
+                b_intents = batch['intents'][:, role, :]        ## Shape (mini_batch, 24)
+                b_actions = batch['actions'][:, role,]        # Shape: (mini_batch_size,)
+                b_log_probs = batch['log_probs'][:, role,]    # Shape: (mini_batch_size,)
+                b_advs = batch['advantages'][:, role,]         # Shape: (mini_batch_size,)
+                b_returns = batch['returns'][:, role,]         # Shape: (mini_batch_size,)  ## There is no need for values here.. we try to bring in critic predicted values as close to returns (advantages + values)
+                b_action_masks = batch['action_masks'][:, role, :]   # Shape: (mini_batch_size, 8)
+                b_active_masks = batch['active_masks'][:, role,] # Shape: (mini_batch_size,)
+
+                active_sum = torch.clamp(b_active_masks.sum(), min = 1.0)  ## Sum of all the times that single agent was alive...
+
+                ## CRITIC UPDATE 
+                self.value_normalizer.update(b_returns)  ## Calculate the running mean and all
+                normalized_returns = self.value_normalizer.normalize(b_returns) ## Shape (batch,)
+
+                pred_values = self.swarm.get_value(b_global, role)  ## Get values for the current role...
+                unreduced_critic_loss = func.huber_loss(pred_values, normalized_returns, reduction = 'none')  ## As torch calculates individual losses, it means them and returns a single tensor to us.. we use reduction = None to not mean them and next mean them only for alive agents..
+                raw_critic_loss = ((unreduced_critic_loss * b_active_masks) / active_sum).sum() ## .. Calculate loss according to alive agents and such... So this role should get the loss from only when its alive and no uneccesaary garbage needs to be there..
+
+                ### ACTOR UPDATE 
+                b_advs = (b_advs - b_advs.mean()) / (b_advs.std() + 1e-8) ## A small time normalization of the advantages, so that we get small surr 1 and surr 2.. so that those things stabilize..
+
+                dist = self.swarm.get_dist(b_obs, b_intents, b_action_masks, role)  ## We calculate the action distributions again for the same obs which are already in the buffer
+                new_log_probs = dist.log_prob(b_actions) ## And new logs to the same... I guess for the updated network these would change... So we wanted to compare old probs and new probs
+                entropy = dist.entropy()
+                total_entropy += entropy.mean().item() ## Mean of the whole batch entropies
+                
+                ratios = torch.exp(new_log_probs - b_log_probs)  ## Comparing policy.. that is log probs
+                surr1 = ratios * b_advs
+                surr2 = torch.clamp(ratios, 1 - self.eps_clip, 1 + self.eps_clip) * b_advs ## Only limit the ratio to be somewhat within a range..
+
+                raw_actor_loss = -torch.min(surr1, surr2) - (ent_coef * entropy) ## Maximise both entropy and surr , that is ratio into advantage, that si the new policy should be better htan old and also advantages should be large.. that is how much good is the current action than the past...
+                actor_loss = ((raw_actor_loss * b_active_masks) / active_sum).sum()  ## Just sum all those losses divided by the number of times the agent was alive in that batch
+
+                total_actor_loss[role] = actor_loss ##These get overwritten for each epoch and the networks update 4 times with different values orthe same.. based on sampling so
+                total_critic_loss[role] = raw_critic_loss
+
+                running_actor[role] += actor_loss.item() / ppo_epochs 
+                running_critic[role] += raw_critic_loss.item() / ppo_epochs ## Average out so that we can safely take the mean of 4 epochs and update and return the mean
+
+            self.swarm.update_weights(total_actor_loss, total_critic_loss)
+
+        return{
+            "actor_loss" : running_actor,
+            "critic_loss" : running_critic,
+            "entropy" : total_entropy / ppo_epochs * len(AgentRole), ## Most recent one 
+            }
             
-        log_probs = dist.log_prob(actions)    # Shape: (num_envs, num_agents)
-
-        # --- Critic Pass ---
-        norm_values = self.critic(t_global, t_roles) # Shape: (num_envs, num_agents)
-        raw_values = self.value_normalizer.denormalize(norm_values)  ## ## Note that as the target is normalized and all, critics weights change such a way that , values come out normalized from the network.. so we have to denormalize those as to compute returns and advantages, else the value signal becomes weak which might cause advantages or returns to skew towards current rewards
-
-        # Return clean arrays straight back to CPU NumPy with zero overhead
-        return actions.cpu().numpy(), log_probs.cpu().numpy(), raw_values.cpu().numpy()
-
-
-    def update(self, batch : Dict[str, torch.Tensor], ent_coef : float) -> Dict[str, float]:  # A single update method for a single batch by a single batch creator...
-
-        self.actor.train()  ## In training mode...
-        self.critic.train() ##..Same
-
-        ### Unpacking batch elements
-        b_obs = batch['obs'].to(self.device)                 # Shape: (mini_batch_size, 24)
-        b_global = batch['global_state'].to(self.device)     # Shape: (mini_batch_size, 96)
-        b_roles = batch['role_ids'].to(self.device)             # Shape: (mini_batch_size,)
-        b_actions = batch['actions'].to(self.device)         # Shape: (mini_batch_size,)
-        b_log_probs = batch['log_probs'].to(self.device)     # Shape: (mini_batch_size,)
-        b_advs = batch['advantages'].to(self.device)         # Shape: (mini_batch_size,)
-        b_returns = batch['returns'].to(self.device)         # Shape: (mini_batch_size,)  ## There is no need for values here.. we try to bring in critic predicted values as close to returns (advantages + values)
-        b_action_masks = batch['action_masks'].to(self.device)   # Shape: (mini_batch_size, 8)
-        b_active_masks = batch['active_masks'].to(self.device) # Shape: (mini_batch_size,)
-
-        active_sum = torch.clamp(b_active_masks.sum(), min = 1.0)  ## Sum of all aliveagents..
-
-        ## CRITIC UPDATE 
-        self.value_normalizer.update(b_returns)  ## Calculate the running mean and all
-        normalized_returns = self.value_normalizer.normalize(b_returns) ## Shape (batch,)
-
-        pred_values = self.critic(b_global, b_roles)  ## Note that b_roles is the same for both actor and critic
-        raw_critic_loss = func.huber_loss(pred_values, normalized_returns)
-
-        self.critic_optimizer.zero_grad()   ### Our critic object is self.critic, but here we are underscoring optimizer which is another object entirely.. so lets see
-        raw_critic_loss.backward()
-        nn.utils.clip_grad_norm_(self.critic.parameters(), max_norm = self.max_grad_norm)   ## we clip the update to max update of 10 to smoothen out the gradient. Although we use adam and such for updative learning rate this clipping helps so..
-        self.critic_optimizer.step()
-
-
-        ### ACTOR UPDATE 
-        b_advs = (b_advs - b_advs.mean()) / (b_advs.std() + 1e-8) ## A small time normalization of the advantages, so that we get small surr 1 and surr 2.. so that those things stabilize..
-
-        dist = self.actor(b_obs, b_roles, b_action_masks)  ## We calculate the action distributions again for the same obs, roles which are already in the buffer
-        new_log_probs = dist.log_prob(b_actions) ## And new logs to the same... I guess for the updated network these would change... So we wanted to compare old probs and new probs
-        entropy = dist.entropy()
-        
-        ratios = torch.exp(new_log_probs - b_log_probs)  ## Comparing policy.. that is log probs
-        surr1 = ratios * b_advs
-        surr2 = torch.clamp(ratios, 1 - self.eps_clip, 1 + self.eps_clip) * b_advs ## Only limit the ratio to be somewhat within a range..
-
-        raw_actor_loss = -torch.min(surr1, surr2) - (ent_coef * entropy) ## Maximise both entropy and surr , that is ratio into advantage, that si the new policy should be better htan old and also advantages should be large.. that is how much good is the current action than the past...
-        actor_loss = ((raw_actor_loss * b_active_masks) / active_sum).sum()  ## Just sum all those losses for alive agents
-
-        self.actor_optimizer.zero_grad()
-        actor_loss.backward()
-        nn.utils.clip_grad_norm_(self.actor.parameters(), self.max_grad_norm)
-        self.actor_optimizer.step()
-
-        return {
-            "actor_loss": actor_loss.item(), 
-            "critic_loss": raw_critic_loss.item(),
-            "entropy": entropy.mean().item()
-        }

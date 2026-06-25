@@ -8,6 +8,8 @@ class Shit(IntEnum):
     SHIT4 = 3
 
 num_agents = 4
+for shit in Shit:
+    print(shit)
 
 hp = np.zeros(num_agents, dtype = np.float32)
 
@@ -18,9 +20,5 @@ print(hp > 0)
 print(torch.device("cpu"), isinstance(torch.device("cpu"), str), type(torch.device("cpu")))
 print(np.dtype(np.bool_).itemsize)
 
-gol = 2
-mol = 3
-jhol = 4
-if boolean:
-    print("yes")
+
 
