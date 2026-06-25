@@ -5,7 +5,7 @@ from app.api.inference import Inference
 import json
 
 
-inference = Inference(checkpoint_path = 'checkpoints/MAPPO_GridWorld_1781890067/step_4800000.pt')
+inference = Inference(checkpoint_path = 'checkpoints/MAPPO_GridWorld_1782322074/step_4800000.pt')
 router = APIRouter(prefix = '/api', tags = ['Control'])
 
 #The Background Worker

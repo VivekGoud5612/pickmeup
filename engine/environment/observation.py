@@ -1,6 +1,6 @@
 from typing import Dict, Tuple, Any 
 from engine.environment.state import GameState 
-from engine.utils.enums import AgentRole, Teams, ActionTypes
+from engine.utils.enums import AgentRole, Teams, ActionTypes, AgentID
 from engine.environment.state_ops import StateOperations as stateops 
 import numpy as np 
 
@@ -19,7 +19,7 @@ class ObservationBuilder:
 
         features = np.zeros(ObservationBuilder.SELF_FEATURE_DIM, dtype = np.float32)
 
-        features[0] = stateops.get_hp_ratio(state, agent_id)  # Total of 9 features with gp, stamina, normalized positions and 3 skills and 2 if blocking or invincible
+        features[0] = stateops.get_hp_ratio(state, agent_id)  # Total of 9 features with hp, stamina, normalized positions and 3 skills and 2 if blocking or invincible
         features[1] = stateops.get_stamina_ratio(state, agent_id)
         features[2], features[3] = stateops.normalize_dims(state, agent_id)
         features[4] = 1.0 if state.is_blocking[agent_id] else 0.0
@@ -74,7 +74,7 @@ class ObservationBuilder:
 
         role = state.roles[agent_id]
         is_boss = (role == AgentRole.BOSS)
-        boss_id = AgentRole.BOSS 
+        boss_id = AgentID.BOSS 
 
         continuous_obs[0:9] = ObservationBuilder._extract_self_features(state, agent_id) ## Populate the arrays with know information first 
         role_ids[0] = role

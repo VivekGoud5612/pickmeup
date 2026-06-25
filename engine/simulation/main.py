@@ -6,6 +6,7 @@ from torch.utils.tensorboard import SummaryWriter
 import numpy as np 
 import os
 from collections import deque ## So that we can append fast.. We use this to track both episode rewardsand heroes win rate...
+import traceback
 
 from engine.environment.vector_env.shared_vector_env import SharedSubprocessVectorEnv
 from engine.environment.env import Env 
@@ -27,6 +28,8 @@ def main():
     TOTAL_TIMESTEPS = 5000000 ## For now 5000 steps.. let this run perfectly.. lets go to 5000000 - 5 mil
     BATCH_SIZE = 1024  ## Let this be ...
     PPO_EPOCHS = 4
+    INTENT_SIZE = 24
+    CURRICULUM_LEVEL = 1
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"[*] Initializing MAPPO Training on {device}")
@@ -43,7 +46,7 @@ def main():
     agent = MAgent(device = device)
     buffer = RolloutBuffer(
         num_steps = NUM_STEPS, num_envs = NUM_ENVS, num_agents = NUM_AGENTS,
-        obs_shape = (ObservationBuilder.OBS_SIZE), local_role_id_shape = (GameState.NUM_ROLES), global_state_shape = (ObservationBuilder.GLOBAL_STATE_SIZE),
+        obs_shape = (ObservationBuilder.OBS_SIZE), intent_shape = (INTENT_SIZE), global_state_shape = (ObservationBuilder.GLOBAL_STATE_SIZE),
         actions_shape = (GameState.NUM_ACTIONS), device = device,
     )
 
@@ -63,7 +66,6 @@ def main():
 
         current_obs = obs_dict['obs'] ## Current obs is just the pointer to liek store current obs and oter things
         current_global = obs_dict['global_state'] ## Shape (num_envs, num_agents, 96)
-        current_roles = obs_dict['roles']
         current_action_masks = info['action_masks']
         current_active_masks = info['active_masks']
 
@@ -76,25 +78,15 @@ def main():
                 global_step += (NUM_ENVS * NUM_AGENTS)  ## For all envs and for each agent ..so yeah
 
 
-                actions, log_probs, values = agent.get_actions_and_values(
+                actions, log_probs, values, intents = agent.get_actions_and_values(
                     obs = current_obs,
                     global_state = current_global,
-                    roles = current_roles, ## All are numpy arrays and this is being calculated in CPU..
                     action_masks =  current_action_masks,
                     is_training = True ## Sample randomly..          
                 )
 
                 ## STEP
                 next_obs_dict, rewards, dones, truncated, next_info = vector_env.step(actions)
-                
-                # --- TEMPORARY DEBUG: PRINT ACTION DISTRIBUTION ---
-                if global_step % (NUM_ENVS * NUM_AGENTS * NUM_STEPS * 10) == 0:
-                    unique, counts = np.unique(actions, return_counts=True)
-                    print(f"\n[DEBUG] Action Distribution at Step {global_step}:")  ## Print the actions and their counts for every 6400 stepss...
-                    for u, c in zip(unique, counts):
-                        print(f"Action {u}: {c} times")
-                # ------------------------------------------------
-
 
                 ### Considering for last obs of a game and also our phase annealing thing...
                 GAMMA = 0.95
@@ -113,11 +105,10 @@ def main():
 
                         t_obs = np.expand_dims(terminal_obs['obs'], axis = 0) ## Expand the very first dim so the shape
                         t_global = np.expand_dims(terminal_obs['global_state_obs'], axis = 0)
-                        t_roles = np.expand_dims(terminal_obs['role_ids'], axis = 0)
                         t_action_masks = np.ones((1, NUM_AGENTS, GameState.NUM_ACTIONS), dtype = bool)  ## A simple toy mask to make just supplement for the actual mask as we only need the values here..
 
-                        _, _, terminated_values = agent.get_actions_and_values(
-                            obs = t_obs, roles = t_roles, global_state = t_global,
+                        _, _, terminated_values, _ = agent.get_actions_and_values(
+                            obs = t_obs, global_state = t_global,
                             action_masks = t_action_masks, is_training = False  ## No need for is training as we are calculating just the values..
                         )
 
@@ -146,7 +137,7 @@ def main():
                             
                 buffer.store(
                     local_obs = current_obs,
-                    local_ids = current_roles,
+                    local_intents = intents,
                     global_state = current_global,
                     actions = actions,
                     log_probs = log_probs,  ## Log probs and others are from this current things.. but we store the next, obs, action mask and active mask so as to use it next time...
@@ -159,53 +150,86 @@ def main():
             
                 current_obs = next_obs_dict['obs']  ## Only update the 
                 current_global = next_obs_dict['global_state']
-                current_roles = next_obs_dict['roles']
                 current_action_masks = next_info['action_masks']
                 current_active_masks = next_info['active_masks']  ## Just update the current running array and then use it in the next iteration
             
             ### PHASE 2 - GAE Calculation...
-            _, _, next_values = agent.get_actions_and_values(obs = current_obs, roles = current_roles, global_state = current_global, action_masks = current_action_masks, is_training = False) ## A way to just calculate the next value.. irrespective if the next step.. so that games where they ended naturally also get to know their next value, and not only the truncated ones.. The truncated ones are just used to add the total value to their rewards as they played well and they didnt die
+            _, _, next_values, _ = agent.get_actions_and_values(obs = current_obs, global_state = current_global, action_masks = current_action_masks, is_training = False) ## A way to just calculate the next value.. irrespective if the next step.. so that games where they ended naturally also get to know their next value, and not only the truncated ones.. The truncated ones are just used to add the total value to their rewards as they played well and they didnt die
             buffer.compute_returns_and_advantages(next_values = next_values, next_dones = dones)  ## Dones is the next dones, calculated after every step
 
 
             ### Phase 3 - PPO Update..
-            avg_actor_loss, avg_critic_loss, avg_entropy, advantages = 0.0, 0.0, 0.0, 0.0 ## just initialize them..
+            avg_tank_actor_loss, avg_dealer_actor_loss, avg_healer_actor_loss, avg_boss_actor_loss, avg_entropy = 0.0, 0.0, 0.0, 0.0, 0.0 ## just initialize them..
+            avg_tank_critic_loss, avg_dealer_critic_loss, avg_healer_critic_loss, avg_boss_critic_loss = 0.0, 0.0, 0.0, 0.0
+            tank_advantages,  dealer_advantages, healer_advantages, boss_advantages = 0.0, 0.0, 0.0, 0.0
             update_steps = 0
 
-            for _ in range(PPO_EPOCHS):  ## Train the same netowrk on the same number of episodes again and again..
-
-                current_ent_coef = 0.05 * (1.0 - current_alpha)  ## We decay the entropy coefficient right here and send that as the parameter for update
-                current_ent_coef = max(0.001, current_ent_coef)  ## IF that gets to 0, we allow a small exploration coeff
+            current_ent_coef = 0.05 * (1.0 - current_alpha)  ## We decay the entropy coefficient right here and send that as the parameter for update
+            current_ent_coef = max(0.001, current_ent_coef)  ## IF that gets to 0, we allow a small exploration coeff
                 
-                data_generator = buffer.generate_batch(batch_size = BATCH_SIZE)  ## Note that this is a generator, so we need to loop over the generator to yield mini batches at a time..
-                for mini_batch in data_generator: ## Note that the mini batch already contains the tensors so.. there is no need for another conversion
-                    loss_dict = agent.update(mini_batch, current_ent_coef)  ## loss dict automatically gets copied to CPU.. so there is no extra need for cpu memory transfer but the thing I dont understand is how does this generator work and is teh data generator something like an object, where we loop and the objects goes on yielding...
+            data_generator = buffer.generate_batch(batch_size = BATCH_SIZE)  ## Note that this is a generator, so we need to loop over the generator to yield mini batches at a time..
+            for mini_batch in data_generator: ## Note that the mini batch already contains the tensors so.. there is no need for another conversion
+                loss_dict = agent.update(mini_batch, current_ent_coef)  ## loss dict automatically gets copied to CPU.. so there is no extra need for cpu memory transfer but the thing I dont understand is how does this generator work and is teh data generator something like an object, where we loop and the objects goes on yielding...
 
-                    avg_actor_loss += loss_dict['actor_loss']
-                    avg_critic_loss += loss_dict['critic_loss']
-                    avg_entropy += loss_dict['entropy']
-                    update_steps += 1
-                    advantages += mini_batch['advantages'].mean() ## We are tracking this as well, that is add each batchs advantage mean (That is add mean of 1024 advantages)... we add the means number of loop times (that is to the number of batches generated times)
+                avg_tank_actor_loss += loss_dict["actor_loss"][0] ## We have per agent losses
+                avg_dealer_actor_loss += loss_dict['actor_loss'][1]
+                avg_healer_actor_loss += loss_dict['actor_loss'][2]
+                avg_boss_actor_loss += loss_dict['actor_loss'][3]
 
-            avg_actor_loss /= update_steps  ## Actual averaging and the things to actually track and averaging helps a lot
-            avg_critic_loss /= update_steps 
+                avg_tank_critic_loss += loss_dict['critic_loss'][0]
+                avg_dealer_critic_loss += loss_dict['critic_loss'][1]
+                avg_healer_critic_loss += loss_dict['critic_loss'][2]
+                avg_boss_critic_loss += loss_dict['critic_loss'][3]
+
+                avg_entropy += loss_dict['entropy']
+                update_steps += 1
+                tank_advantages += mini_batch['advantages'][:, 0,].mean() ## We are tracking this as well, that is add each batchs advantage mean (That is add mean of 1024 advantages)... we add the means number of loop times (that is to the number of batches generated times)
+                dealer_advantages += mini_batch['advantages'][:, 1,].mean()
+                healer_advantages += mini_batch['advantages'][:, 2,].mean()
+                boss_advantages += mini_batch['advantages'][:, 3,].mean()
+
+            avg_tank_actor_loss /= update_steps ## We have per agent losses
+            avg_dealer_actor_loss /= update_steps
+            avg_healer_actor_loss /= update_steps
+            avg_boss_actor_loss /= update_steps
+            avg_tank_critic_loss /= update_steps
+            avg_dealer_critic_loss /= update_steps
+            avg_healer_critic_loss /= update_steps
+            avg_boss_critic_loss /= update_steps
             avg_entropy /= update_steps
-            avg_advantage = advantages / update_steps ##Now mean it to the number of update steps.. so we finally get a avg mean for all the batches, for all teh values inside a batch
 
+            tank_advantages /= update_steps ## We are tracking this as well, that is add each batchs advantage mean (That is add mean of 1024 advantages)... we add the means number of loop times (that is to the number of batches generated times)
+            dealer_advantages /= update_steps
+            healer_advantages /= update_steps
+            boss_advantages /= update_steps
+        
             buffer.clear() ### The training is done so we clear the buffer...
 
 
             ## Phase 4 Logging...
             sps = int(global_step / (time.time() - start_time))  ## I guess the steps per second or steps for this particular game to run... Not a single game but 8 different games with steps also counting for eacha agent..
 
-            writer.add_scalar("Loss/Actor", avg_actor_loss, global_step)
-            writer.add_scalar("Loss/Critic", avg_critic_loss, global_step)
+            writer.add_scalar("Loss/TankActor", avg_tank_actor_loss, global_step)
+            writer.add_scalar("Loss/DealerActor", avg_dealer_actor_loss, global_step)
+            writer.add_scalar("Loss/HealerActor", avg_healer_actor_loss, global_step)
+            writer.add_scalar("Loss/BossActor", avg_boss_actor_loss, global_step)
+
+            writer.add_scalar("Loss/TankCritic", avg_tank_critic_loss, global_step)
+            writer.add_scalar("Loss/DealerCritic", avg_dealer_critic_loss, global_step)
+            writer.add_scalar("Loss/HealerCritic", avg_healer_critic_loss, global_step)
+            writer.add_scalar("Loss/BossCritic", avg_boss_critic_loss, global_step)
+
             writer.add_scalar("Metrics/Entropy", avg_entropy, global_step) ## A graph to show the avg entropy over each time step in global steps
             writer.add_scalar("Metrics/SPS", sps, global_step)
-            writer.add_scalar("Metrics/Advantages", avg_advantage, global_step)
+
+            writer.add_scalar("Metrics/TankAdvantages", tank_advantages, global_step)
+            writer.add_scalar("Metrics/DealerAdvantages", dealer_advantages, global_step)
+            writer.add_scalar("Metrics/HealerAdvantages", healer_advantages, global_step)
+            writer.add_scalar("Metrics/BossAdvantages", boss_advantages, global_step)
+
 
             ## Average reward will also be logged 
-            writer.add_scalar("Environment/Mean_Reward", np.mean(buffer.rewards), global_step)
+            writer.add_scalar("Environment/Mean_Reward", np.mean(buffer.rewards), global_step)  ## For all agents and for all the items in that batch
 
             if len(rolling_returns) > 0:
                 writer.add_scalar("Environment/Episodic_Return", np.mean(rolling_returns), global_step)
@@ -224,6 +248,31 @@ def main():
                     CURRICULUM_LEVEL += 1
 
                     milestone_path = f"checkpoints/{run_name}/LEVEL_{CURRICULUM_LEVEL - 1}_Mastered.pt"  ## Save the model to this path for every win rate exceeding that win rate for this curriculum levels
+                    torch.save({
+                    # --- ACTORS ---
+                    'tank_actor': agent.swarm.tank_actor.state_dict(),
+                    'healer_actor': agent.swarm.healer_actor.state_dict(),
+                    'dealer_actor': agent.swarm.dealer_actor.state_dict(),
+                    'boss_actor': agent.swarm.boss_actor.state_dict(),
+                    
+                    # --- CRITICS ---
+                    'tank_critic': agent.swarm.tank_critic.state_dict(),
+                    'healer_critic': agent.swarm.healer_critic.state_dict(),
+                    'dealer_critic': agent.swarm.dealer_critic.state_dict(),
+                    'boss_critic': agent.swarm.boss_critic.state_dict(),
+                    
+                    # --- OPTIMIZERS (Crucial for resuming training later) ---
+                    'tank_aoptim': agent.swarm.tank_aoptim.state_dict(),
+                    'healer_aoptim': agent.swarm.healer_aoptim.state_dict(),
+                    'dealer_aoptim': agent.swarm.dealer_aoptim.state_dict(),
+                    'boss_aoptim': agent.swarm.boss_aoptim.state_dict(),
+                    'tank_coptim': agent.swarm.tank_coptim.state_dict(),
+                    'healer_coptim': agent.swarm.healer_coptim.state_dict(),
+                    'dealer_coptim': agent.swarm.dealer_coptim.state_dict(),
+                    'boss_coptim': agent.swarm.boss_coptim.state_dict(),
+                    
+                    }, milestone_path)
+
                     rolling_win_rate.clear()  ## Clear the rolling win rate so that we can stack that up again...
 
                     print(f"[*]Broadcasting Curriculum Level {CURRICULUM_LEVEL} to workers...")
@@ -231,19 +280,39 @@ def main():
 
                     current_obs = current_obs_dict['obs']
                     current_global = current_obs_dict['global_state']
-                    current_roles = current_obs_dict['roles']
                     current_action_masks = current_info['action_masks']
                     current_active_masks = current_info['active_masks']
 
             if (global_step // (NUM_ENVS * NUM_AGENTS * NUM_STEPS)) % 10 == 0:  ## // divides and gives the nearest integer.. And also for each 10th step, I guess.. I dont know
-                print(f"Step: {global_step} | SPS: {sps} | Ret: {np.mean(buffer.rewards):.2f} | Act Loss: {avg_actor_loss:.4f} | Crit Loss: {avg_critic_loss:.4f} | Ent: {avg_entropy:.4f}")
+                print(f"Step: {global_step} | SPS: {sps} | Ret: {np.mean(buffer.rewards):.2f} | Ent: {avg_entropy:.4f} | WinRate: {np.mean(rolling_win_rate)}")
 
             if (global_step // (NUM_ENVS * NUM_AGENTS * NUM_STEPS)) % 50 == 0:  ## Save the model for every 6400 * 5 steps.. at that path..
                 save_path = f"checkpoints/{run_name}/step_{global_step}.pt"
                 torch.save({
-                    'actor_state_dict': agent.actor.state_dict(),
-                    'critic_state_dict': agent.critic.state_dict(),
+                    # --- ACTORS ---
+                    'tank_actor': agent.swarm.tank_actor.state_dict(),
+                    'healer_actor': agent.swarm.healer_actor.state_dict(),
+                    'dealer_actor': agent.swarm.dealer_actor.state_dict(),
+                    'boss_actor': agent.swarm.boss_actor.state_dict(),
+                    
+                    # --- CRITICS ---
+                    'tank_critic': agent.swarm.tank_critic.state_dict(),
+                    'healer_critic': agent.swarm.healer_critic.state_dict(),
+                    'dealer_critic': agent.swarm.dealer_critic.state_dict(),
+                    'boss_critic': agent.swarm.boss_critic.state_dict(),
+                    
+                    # --- OPTIMIZERS (Crucial for resuming training later) ---
+                    'tank_aoptim': agent.swarm.tank_aoptim.state_dict(),
+                    'healer_aoptim': agent.swarm.healer_aoptim.state_dict(),
+                    'dealer_aoptim': agent.swarm.dealer_aoptim.state_dict(),
+                    'boss_aoptim': agent.swarm.boss_aoptim.state_dict(),
+                    'tank_coptim': agent.swarm.tank_coptim.state_dict(),
+                    'healer_coptim': agent.swarm.healer_coptim.state_dict(),
+                    'dealer_coptim': agent.swarm.dealer_coptim.state_dict(),
+                    'boss_coptim': agent.swarm.boss_coptim.state_dict(),
+                    
                 }, save_path)
+                print(f"[*] Brains & Optimizers saved to {save_path}")
                 print(f"[*] Brain saved to {save_path}")
 
     # --- 5. CRITICAL CLEANUP ---
@@ -252,6 +321,8 @@ def main():
 
     except Exception as e:
         print(f"\n[CRITICAL ERROR] Training crashed:\n{e}")
+        error_trace = traceback.format_exc()
+        print(error_trace)
 
     finally:  ## Finally .. to be run regardless of the above exit code.. 
         print("[*] Cleaning up Shared Memory and closing workers...")
