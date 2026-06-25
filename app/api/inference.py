@@ -3,7 +3,7 @@ import numpy as np
 from engine.environment.env import Env 
 from engine.environment.state import GameState 
 from engine.environment.observation import ObservationBuilder
-from engine.utils.enums import AgentID
+from engine.utils.enums import AgentID, ActionTypes
 from engine.agents.policy.trainer import MAgent  
 
 
@@ -59,6 +59,7 @@ class Inference:
         state = self.env.state  ## Store the state class after step.. so that we can send hte JSON to frontend via router..3.
         game_state_payload = {
             "step": self.env.step_count,
+            "done"  : False,
             "agents": {
                     agent.name : {
                         "x": int(state.positions[agent][0]), 
@@ -71,12 +72,16 @@ class Inference:
                             "basic" : float(state.cooldowns[agent][0]),
                             "utility" : float(state.cooldowns[agent][1]),
                             "ultimate" : float(state.cooldowns[agent][2]),
-                        }
+                        },
+                        'action' : ActionTypes(flat_actions[agent]),
                     }  for agent in AgentID
-            }
+            },
+            "win_rate" : 0.0,
         }
 
         if self.info['terminal'] or all(dones) or truncated:
-            self.obs_dict, self.info = self.env.reset()
+            game_state_payload['win_rate'] = self.info['win_rate']
+            self.obs, self.info = self.env.reset()
+            game_state_payload["done"] = True
 
         return game_state_payload

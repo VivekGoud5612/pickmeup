@@ -1,156 +1,254 @@
-import time
-import sys
-import numpy as np
-import torch
-from torch.utils.tensorboard import SummaryWriter
+import React, { useEffect, useRef, useState } from 'react';
 
-# Import your custom modules
-from engine.environment.shared_vector_env import SharedSubprocessVectorEnv
-from engine.environment.env import Env 
-from engine.agents.policy.trainer import MAPPOAgent
-from engine.agents.policy.rollout import RolloutBuffer
+const CombatVisualizer = () => {
+  const canvasRef = useRef(null);
+  const gameStateRef = useRef(null); 
+  const wsRef = useRef(null); 
+  const logsEndRef = useRef(null); // Reference to auto-scroll the logs
+  
+  const [hudStats, setHudStats] = useState(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [logs, setLogs] = useState([]); // State to hold our terminal logs
 
-def make_env():
-    return Env(grid_size=20, max_steps=200)
+  // Helper function to push logs to the terminal
+  const addLog = (message, type = 'info') => {
+    setLogs((prev) => {
+      const newLogs = [...prev, { time: new Date().toLocaleTimeString(), message, type }];
+      return newLogs.slice(-50); // Keep only the last 50 logs to prevent memory leaks
+    });
+  };
 
-def main():
-    # --- 1. Hyperparameters & Setup ---
-    NUM_ENVS = 8
-    NUM_STEPS = 200
-    NUM_AGENTS = 4
-    TOTAL_TIMESTEPS = 5_000_000
-    BATCH_SIZE = 1024 # Or whatever fits your flat_size cleanly
-    PPO_EPOCHS = 4
+  // Auto-scroll the log container whenever a new log is added
+  useEffect(() => {
+    if (logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [logs]);
+
+  useEffect(() => {
+    wsRef.current = new WebSocket('ws://127.0.0.1:8000/ws/combat');
+
+    wsRef.current.onopen = () => {
+      console.log("WebSocket connected");
+      addLog("System Online: Connected to PickMeUp Engine", "success");
+    };
+
+    wsRef.current.onclose = () => {
+      addLog("System Offline: Connection closed", "error");
+    };
+
+    let frameCount = 0;
+    wsRef.current.onmessage = (event) => {
+      const state = JSON.parse(event.data);
+      gameStateRef.current = state;
+      
+      frameCount++;
+      
+      // Throttle React State updates to every 5 frames
+      if (frameCount % 5 === 0) {
+          setHudStats(state.agents);
+          // Optional: Log every 10 steps so it doesn't spam too fast
+          if (state.step % 10 === 0) {
+              addLog(`Processing Step ${state.step}...`, "info");
+          }
+      }
+    };
+
+    const renderLoop = () => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Draw Grid Lines
+      ctx.strokeStyle = '#1E2532';
+      ctx.lineWidth = 1;
+      for (let i = 0; i <= 20; i++) {
+          ctx.beginPath(); ctx.moveTo(i * 20, 0); ctx.lineTo(i * 20, 400); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(0, i * 20); ctx.lineTo(400, i * 20); ctx.stroke();
+      }
+
+      // Draw Agents
+      if (gameStateRef.current && gameStateRef.current.agents) {
+        const agents = gameStateRef.current.agents;
+
+        Object.entries(agents).forEach(([agentName, data]) => {
+          const px = data.x * 20;
+          const py = data.y * 20;
+
+          // Agent Square
+          ctx.fillStyle = agentName === "BOSS" ? '#F2685B' : '#4FE8C4';
+          ctx.fillRect(px, py, 20, 20);
+
+          // Agent Initials
+          ctx.fillStyle = '#000000';
+          ctx.font = 'bold 10px monospace';
+          ctx.fillText(agentName.substring(0, 1), px + 6, py + 14);
+
+          // HP Bar (Red)
+          const maxHp = data.max_hp ? data.max_hp : (agentName === 'BOSS' ? 200 : 100); 
+          const hpPercent = Math.max(0, data.hp / maxHp);
+          ctx.fillStyle = '#ff4444';
+          ctx.fillRect(px, py - 6, 20 * hpPercent, 4); 
+
+          // Stamina Bar (Yellow)
+          if (data.stamina !== undefined) {
+              const maxStam = data.max_stamina ? data.max_stamina : 50;
+              const staminaPercent = Math.max(0, data.stamina / maxStam);
+              ctx.fillStyle = '#f6e05e';
+              ctx.fillRect(px, py - 2, 20 * staminaPercent, 2); 
+          } 
+        });
+      }
+
+      requestAnimationFrame(renderLoop);
+    };
     
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"[*] Initializing MAPPO Training on {device}...")
+    requestAnimationFrame(renderLoop);
 
-    # Initialize Logger
-    run_name = f"MAPPO_GridWorld_{int(time.time())}"
-    writer = SummaryWriter(f"runs/{run_name}")
+    return () => {
+      if (wsRef.current) wsRef.current.close();
+    };
+  }, []);
 
-    # Initialize Components
-    env_fns = [make_env for _ in range(NUM_ENVS)]
-    vector_env = SharedSubprocessVectorEnv(env_fns, num_agents=NUM_AGENTS)
-    
-    agent = MAPPOAgent(device=device)
-    buffer = RolloutBuffer(
-        num_steps=NUM_STEPS, num_envs=NUM_ENVS, num_agents=NUM_AGENTS,
-        obs_shape=(24,), local_role_id_shape=(), global_state_shape=(96,), action_shape=(),
-        device=device
-    )
+  // --- BUTTON CONTROLS ---
+  const handleStart = () => {
+    setIsPlaying(true);
+    addLog("Command Sent: START_GAME", "system");
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ command: 'start' }));
+    }
+  };
 
-    global_step = 0
-    start_time = time.time()
+  const handleStop = () => {
+    setIsPlaying(false);
+    addLog("Command Sent: STOP_GAME", "system");
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ command: 'stop' }));
+    }
+  };
 
-    try:
-        # --- 2. Initial Reset ---
-        print("[*] Booting Shared Workers and Resetting Environments...")
-        obs_dict, info = vector_env.reset()
+  // --- UI RENDER ---
+  return (
+    <div className="min-h-screen bg-[#0A0E17] text-slate-300 font-sans p-8">
+      
+      {/* Header & Controls */}
+      <div className="max-w-6xl mx-auto flex justify-between items-end mb-8 border-b border-slate-800 pb-4">
+        <div>
+            <h2 className="text-[#4FE8C4] font-mono text-3xl font-bold tracking-widest drop-shadow-[0_0_8px_rgba(79,232,196,0.5)]">
+            PICKMEUP
+            </h2>
+            <p className="text-slate-500 font-mono text-sm mt-1">Engine Inference Visualizer v1.0</p>
+        </div>
         
-        current_obs = obs_dict['obs']
-        current_global = obs_dict['global_state']
-        current_roles = obs_dict['roles']
-        current_action_masks = info['action_mask']
-        current_active_masks = info['active_mask']
+        <div className="flex gap-4">
+            <button 
+                onClick={handleStart}
+                disabled={isPlaying}
+                className={`px-6 py-2 rounded-md font-bold tracking-wide transition-all ${
+                    isPlaying 
+                    ? 'bg-slate-800 text-slate-500 cursor-not-allowed' 
+                    : 'bg-[#4FE8C4] text-slate-900 hover:bg-[#3bc2a1] hover:shadow-[0_0_15px_rgba(79,232,196,0.4)]'
+                }`}
+            >
+                START ENGINE
+            </button>
+            <button 
+                onClick={handleStop}
+                disabled={!isPlaying}
+                className={`px-6 py-2 rounded-md font-bold tracking-wide transition-all ${
+                    !isPlaying 
+                    ? 'bg-slate-800 text-slate-500 cursor-not-allowed' 
+                    : 'bg-[#F2685B] text-slate-900 hover:bg-[#d6554a] hover:shadow-[0_0_15px_rgba(242,104,91,0.4)]'
+                }`}
+            >
+                HALT
+            </button>
+        </div>
+      </div>
+
+      {/* Main Dashboard Layout */}
+      <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
         
-        print("[*] Training Loop Started.")
-        
-        # --- 3. Main Training Loop ---
-        while global_step < TOTAL_TIMESTEPS:
+        {/* Left Column: Canvas + Logs */}
+        <div className="lg:col-span-2 flex flex-col gap-6">
             
-            # --- PHASE 1: ROLLOUT ---
-            for step in range(NUM_STEPS):
-                global_step += (NUM_ENVS * NUM_AGENTS)
-                
-                # Get Actions (Fast Forward Pass)
-                actions, log_probs, values = agent.get_actions_and_values(
-                    obs=current_obs,
-                    global_state=current_global,
-                    roles=current_roles,
-                    action_masks=current_action_masks,
-                    is_training=True
-                )
-                
-                # Step Environments
-                next_obs_dict, rewards, dones, truncated, next_info = vector_env.step(actions)
-                
-                # Store Data
-                buffer.store(
-                    local_obs=current_obs,
-                    local_ids=current_roles,
-                    global_state=current_global,
-                    actions=actions,
-                    log_probs=log_probs,
-                    rewards=rewards,
-                    dones=dones,
-                    values=values,
-                    action_masks=current_action_masks,
-                    active_masks=current_active_masks
-                )
-                
-                # Update Pointers
-                current_obs = next_obs_dict['obs']
-                current_global = next_obs_dict['global_state']
-                current_roles = next_obs_dict['roles']
-                current_action_masks = next_info['action_mask']
-                current_active_masks = next_info['active_mask']
+            {/* The Canvas Arena */}
+            <div className="relative self-center">
+                <div className="absolute -inset-1 bg-gradient-to-r from-[#4FE8C4]/20 to-[#F2685B]/20 blur-lg rounded-xl pointer-events-none"></div>
+                <canvas 
+                    ref={canvasRef} 
+                    width={400} 
+                    height={400} 
+                    className="relative bg-[#12161D] border-2 border-[#2F3A4F] rounded-lg z-10"
+                />
+            </div>
 
-            # --- PHASE 2: GAE CALCULATION ---
-            # Bootstrap value for the last state
-            _, _, next_values = agent.get_actions_and_values(
-                obs=current_obs, global_state=current_global, 
-                roles=current_roles, action_masks=current_action_masks, is_training=True
-            )
+            {/* Event Logs Terminal */}
+            <div className="bg-[#12161D] border border-[#2F3A4F] rounded-lg p-4 h-64 flex flex-col">
+                <h3 className="text-white font-bold mb-3 border-b border-slate-700 pb-2 text-sm">SYSTEM LOGS</h3>
+                <div className="flex-grow overflow-y-auto font-mono text-xs space-y-2 pr-2">
+                    {logs.map((log, idx) => (
+                        <div key={idx} className="flex gap-3">
+                            <span className="text-slate-500 shrink-0">[{log.time}]</span>
+                            <span className={`
+                                ${log.type === 'error' ? 'text-red-400' : ''}
+                                ${log.type === 'success' ? 'text-[#4FE8C4]' : ''}
+                                ${log.type === 'system' ? 'text-blue-400' : ''}
+                                ${log.type === 'info' ? 'text-slate-300' : ''}
+                            `}>
+                                {log.message}
+                            </span>
+                        </div>
+                    ))}
+                    <div ref={logsEndRef} /> {/* Invisible anchor for auto-scroll */}
+                </div>
+            </div>
+        </div>
+
+        {/* Right Column: Live Telemetry */}
+        <div className="bg-[#12161D] border border-[#2F3A4F] rounded-lg p-6 h-max">
+            <h3 className="text-white font-bold mb-4 border-b border-slate-700 pb-2">LIVE TELEMETRY</h3>
             
-            buffer.compute_returns_and_advantages(next_values=next_values, next_dones=dones)
+            {hudStats ? (
+                <div className="space-y-4">
+                    {Object.entries(hudStats).map(([name, data]) => (
+                        <div key={name} className="bg-slate-800/50 border border-slate-700/50 p-4 rounded-lg transition-colors">
+                            <div className={`font-black text-lg mb-2 tracking-wider ${name === 'BOSS' ? 'text-[#F2685B]' : 'text-[#4FE8C4]'}`}>
+                                {name}
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-sm font-mono">
+                                <span className="bg-slate-900/80 px-2 py-1.5 rounded text-white flex justify-between items-center">
+                                    <span className="text-slate-500 text-xs">HP</span> 
+                                    <span>{Math.floor(data.hp)}</span>
+                                </span>
+                                <span className="bg-slate-900/80 px-2 py-1.5 rounded text-white flex justify-between items-center">
+                                    <span className="text-slate-500 text-xs">POS</span> 
+                                    <span>{data.x},{data.y}</span>
+                                </span>
+                                {name !== 'BOSS' && (
+                                    <span className="bg-slate-900/80 px-2 py-1.5 rounded text-white flex justify-between items-center col-span-2">
+                                        <span className="text-slate-500 text-xs">STAMINA</span> 
+                                        <span>{Math.floor(data.stamina)}</span>
+                                    </span>
+                                )}
+                                <span className="col-span-2 bg-[#4FE8C4]/10 text-[#4FE8C4] px-3 py-2 rounded mt-1 text-center font-bold">
+                                  {data.action || 'AWAITING_INPUT'}
+                                </span>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            ) : (
+                <div className="flex items-center justify-center h-48 text-sm text-slate-500 animate-pulse font-mono">
+                    Waiting for telemetry...
+                </div>
+            )}
+        </div>
+      </div>
+    </div>
+  );
+};
 
-            # --- PHASE 3: PPO UPDATE ---
-            avg_actor_loss, avg_critic_loss, avg_entropy = 0.0, 0.0, 0.0
-            update_steps = 0
-
-            for _ in range(PPO_EPOCHS):
-                data_generator = buffer.generate_batch(batch_size=BATCH_SIZE)
-                for mini_batch in data_generator:
-                    loss_dict = agent.update(mini_batch)
-                    
-                    avg_actor_loss += loss_dict['actor_loss']
-                    avg_critic_loss += loss_dict['critic_loss']
-                    avg_entropy += loss_dict['entropy']
-                    update_steps += 1
-
-            # Average out the losses for logging
-            avg_actor_loss /= update_steps
-            avg_critic_loss /= update_steps
-            avg_entropy /= update_steps
-
-            buffer.clear()
-
-            # --- PHASE 4: LOGGING ---
-            sps = int(global_step / (time.time() - start_time))
-            
-            writer.add_scalar("Loss/Actor", avg_actor_loss, global_step)
-            writer.add_scalar("Loss/Critic", avg_critic_loss, global_step)
-            writer.add_scalar("Metrics/Entropy", avg_entropy, global_step)
-            writer.add_scalar("Metrics/SPS", sps, global_step)
-            
-            # Log average reward to see if they are actually learning
-            writer.add_scalar("Environment/Mean_Reward", np.mean(buffer.rewards), global_step)
-
-            if (global_step // (NUM_ENVS * NUM_AGENTS * NUM_STEPS)) % 10 == 0:
-                print(f"Step: {global_step} | SPS: {sps} | Ret: {np.mean(buffer.rewards):.2f} | Act Loss: {avg_actor_loss:.4f} | Crit Loss: {avg_critic_loss:.4f} | Ent: {avg_entropy:.4f}")
-
-    # --- 5. CRITICAL CLEANUP ---
-    except KeyboardInterrupt:
-        print("\n[!] Training manually interrupted by user.")
-    except Exception as e:
-        print(f"\n[CRITICAL ERROR] Training crashed:\n{e}")
-    finally:
-        print("[*] Cleaning up Shared Memory and closing workers...")
-        vector_env.close()
-        writer.close()
-        print("[*] Shutdown complete. Exiting.")
-        sys.exit(0)
-
-if __name__ == "__main__":
-    main()
+export default CombatVisualizer;

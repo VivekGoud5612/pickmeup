@@ -48,7 +48,7 @@ class Env(gym.Env):  ## A Multi Agent Gym Environment for 4 agent system
 
         self.episode_rewards = np.zeros(self.num_agents, dtype = np.float32)  ## To track the episodic reward in main, we calculate per env rewards ehre and store it in info
 
-    def reset(self, curriculum_level : int = 1, seed : Optional[int] = None, options : Optional[Dict] = None) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:
+    def reset(self, curriculum_level : int = 10, seed : Optional[int] = None, options : Optional[Dict] = None) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:
         super().reset(seed = seed) ## Where is seed is used and what is seed I do not know.. Wrote in Notes, but is something to track the random resets and can be used to reproduce the same game..
 
         self.step_count = 0  # Update self.step count to 0 and start a new game

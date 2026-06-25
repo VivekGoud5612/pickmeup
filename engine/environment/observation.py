@@ -57,8 +57,8 @@ class ObservationBuilder:
             features[0:2] -= 1.0 #Obscured position coordinates
             return features, role_id
 
-        features[0] = (state.positions[target_id, 0] - state.positions[self_id, 0])  # calculating relative position
-        features[1] = (state.positions[target_id, 1] - state.positions[self_id, 1]) 
+        features[0] = ((state.positions[target_id, 0] - state.positions[self_id, 0]) / state.grid_size)  # calculating relative position
+        features[1] = ((state.positions[target_id, 1] - state.positions[self_id, 1] / state.grid_size)) 
         features[2] = stateops.get_hp_ratio(state, target_id)
         features[3] = stateops.get_stamina_ratio(state, target_id)
         features[4] = 1.0 ## Alive flad confirmation 
