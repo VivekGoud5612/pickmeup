@@ -3,7 +3,6 @@ import React, { useState, useEffect } from 'react';
 // Sub-Component: Metrics tracking for individual entities
 function EntityStatCard({ name, stats, type }) {
   const isMonster = type === 'monster';
-  // Calculate percentage for CSS width bars
   const hpPercentage = (stats.hp / stats.max) * 100;
   const staminaPercentage = (stats.stamina / stats.max_stamina) * 100;
 
@@ -19,13 +18,11 @@ function EntityStatCard({ name, stats, type }) {
         {name.toUpperCase()} <span style={{ fontSize: '12px', color: '#8B949E' }}>({stats.x}, {stats.y})</span>
       </h3>
       
-      {/* HP Telemetry */}
       <div style={{ fontSize: '12px', marginBottom: '4px' }}>HP: {stats.hp}/{stats.max}</div>
       <div style={{ width: '100%', backgroundColor: '#21262D', height: '6px', borderRadius: '3px', marginBottom: '8px', overflow: 'hidden' }}>
         <div style={{ width: `${hpPercentage}%`, backgroundColor: isMonster ? '#FF453A' : '#30D158', height: '100%', transition: 'width 0.1s ease' }} />
       </div>
 
-      {/* Stamina Telemetry */}
       <div style={{ fontSize: '12px', marginBottom: '4px' }}>Stamina: {stats.stamina}/{stats.max_stamina}</div>
       <div style={{ width: '100%', backgroundColor: '#21262D', height: '6px', borderRadius: '3px', overflow: 'hidden' }}>
         <div style={{ width: `${staminaPercentage}%`, backgroundColor: '#0BF', height: '100%', transition: 'width 0.1s ease' }} />
@@ -36,29 +33,32 @@ function EntityStatCard({ name, stats, type }) {
 
 // Master Component
 export default function App() {
-  // 1. Initial State Definition
   const [gameState, setGameState] = useState({
     step: 0,
     heroes: {},
     monsters: {}
   });
+  const [isEngineRunning, setIsEngineRunning] = useState(false);
 
   const GRID_SIZE = 20;
 
-  // 2. The Network Listener (WebSocket)
+  // 1. The Real-Time Network Listener (WebSocket to Node.js)
   useEffect(() => {
-    // Dialing your Uvicorn/FastAPI backend exactly on port 6545
-    const ws = new WebSocket('http://127.0.0.1:8000/ws/combat');
+    const ws = new WebSocket('ws://127.0.0.1:3001');
 
     ws.onopen = () => {
-      console.log('[*] Successfully connected to Python MAPPO Engine!');
+      console.log('[*] Connected to Node.js Real-Time WebSocket Gateway!');
     };
 
-    // This triggers automatically every time Python does await websocket.send_text()
     ws.onmessage = (event) => {
       const incomingData = JSON.parse(event.data);
       setGameState(incomingData);
-      console.log(event.data) // Triggers React to redraw the screen
+
+      // FIX: Seamlessly unlock the UI button when the engine reaches the final step (Step 200)
+      if (incomingData.step >= 200) {
+        setIsEngineRunning(false);
+        console.log('[*] Engine broadcast completed. Resetting UI ignition layout.');
+      }
     };
 
     ws.onerror = (error) => {
@@ -66,18 +66,37 @@ export default function App() {
     };
 
     ws.onclose = () => {
-      console.log('[*] Disconnected from engine.');
+      console.log('[*] Disconnected from Node.js Gateway.');
     };
 
-    // Cleanup function when you close the React tab
     return () => {
       ws.close();
     };
-  }, []); // Empty array ensures we only connect once
+  }, []); 
 
-  // 3. Coordinate Projection Helper
+  // 2. The Ignition Handler (HTTP Fetch to Python FastAPI)
+  const startSimulation = async () => {
+    if (isEngineRunning) return;
+    
+    setIsEngineRunning(true);
+    console.log('[*] Sending HTTP Trigger to Python MAPPO Core...');
+    
+    try {
+      // Direct call to your FastAPI /api/start endpoint on Port 8000
+      const response = await fetch('http://127.0.0.1:8000/api/start', { method: 'POST' });
+      if (response.ok) {
+        console.log('[+] Python MAPPO Engine acknowledges launch request!');
+      } else {
+        console.error('[!] Python engine rejected launch request.');
+        setIsEngineRunning(false);
+      }
+    } catch (error) {
+      console.error('[!] Failed to reach Python server via HTTP:', error);
+      setIsEngineRunning(false);
+    }
+  };
+
   const renderEntityMarker = (name, data, isMonster) => {
-    // Converts absolute coordinates (e.g., 5, 10) into CSS percentages (25%, 50%)
     const leftPos = (data.x / GRID_SIZE) * 100;
     const topPos = (data.y / GRID_SIZE) * 100;
 
@@ -99,8 +118,8 @@ export default function App() {
           color: '#FFFFFF',
           fontWeight: 'bold',
           fontSize: '11px',
-          transform: 'translate(-50%, -50%)', // Centers the circle exactly on the coordinate
-          transition: 'left 0.1s linear, top 0.1s linear', // Smooth sliding animation
+          transform: 'translate(-50%, -50%)',
+          transition: 'left 0.1s linear, top 0.1s linear',
           boxShadow: '0 4px 8px rgba(0,0,0,0.4)'
         }}
         title={name}
@@ -110,7 +129,6 @@ export default function App() {
     );
   };
 
-  // 4. The Master Layout Output
   return (
     <div style={{ display: 'flex', height: '100vh', backgroundColor: '#0D1117', color: '#C9D1D9', fontFamily: 'sans-serif', padding: '20px' }}>
       
@@ -119,23 +137,44 @@ export default function App() {
         <h2 style={{ marginBottom: '15px', color: '#58A6FF' }}>MAPPO Simulation Space (Step: {gameState.step})</h2>
         
         <div style={{
-          position: 'relative', // Critical for absolute positioning of children
+          position: 'relative',
           width: '550px',
           height: '550px',
           backgroundColor: '#161B22',
           border: '2px solid #30363D',
           borderRadius: '8px'
         }}>
-          {/* Loop through dictionary keys and render the dots */}
           {Object.entries(gameState.heroes).map(([name, data]) => renderEntityMarker(name, data, false))}
           {Object.entries(gameState.monsters).map(([name, data]) => renderEntityMarker(name, data, true))}
         </div>
       </div>
 
-      {/* RIGHT COLUMN: METRICS SIDEBAR PANEL */}
+      {/* RIGHT COLUMN: METRICS & CONTROLS SIDEBAR PANEL */}
       <div style={{ width: '340px', borderLeft: '1px solid #30363D', paddingLeft: '20px', overflowY: 'auto' }}>
         <h2 style={{ color: '#F0F6FC', paddingBottom: '10px', borderBottom: '1px solid #30363D', marginTop: '0' }}>Telemetry Panel</h2>
         
+        {/* PHYSICAL IGNITION BUTTON */}
+        <button
+          onClick={startSimulation}
+          disabled={isEngineRunning}
+          style={{
+            width: '100%',
+            padding: '14px',
+            backgroundColor: isEngineRunning ? '#21262D' : '#238636',
+            color: isEngineRunning ? '#8B949E' : '#FFFFFF',
+            border: '1px solid rgba(240,246,252,0.1)',
+            borderRadius: '6px',
+            fontSize: '14px',
+            fontWeight: 'bold',
+            cursor: isEngineRunning ? 'not-allowed' : 'pointer',
+            marginBottom: '20px',
+            transition: 'background-color 0.2s',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
+          }}
+        >
+          {isEngineRunning ? '🚀 SIMULATION IN PROGRESS...' : '⚡ START MAPPO ENGINE'}
+        </button>
+
         <h4 style={{ color: '#58A6FF', margin: '15px 0 10px 0' }}>TEAM HEROES</h4>
         {Object.entries(gameState.heroes).map(([name, stats]) => (
           <EntityStatCard key={name} name={name} stats={stats} type="hero" />

@@ -29,9 +29,9 @@ async def run_game_loop():
 
 #The main api endpoint
 @router.post("/start")
-async def start_simulation(background_taks : BackgroundTasks):
+async def start_simulation(background_tasks : BackgroundTasks):
     #Give the gaem loop to the fastapi's background thread
-    background_taks.add_task(run_game_loop)
+    background_tasks.add_task(run_game_loop)
 
     #Return ok to the frontend
     return{
