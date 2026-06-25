@@ -1,5 +1,7 @@
 import torch
 import numpy as np 
+import json
+import redis
 from engine.environment.env import Env 
 from engine.environment.state import GameState 
 from engine.environment.observation import ObservationBuilder
@@ -12,6 +14,10 @@ class Inference:
     def __init__(self, checkpoint_path = None):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"[*]Booting Inference Engine on {self.device}")
+
+        #Initialize the high speed Redis connection during boot
+        self.redis_client = redis.Redis(host = '127.0.0.1', port = 6379, db = 0)
+        print("[*]Redis pub/sub transmitter initialized on port 6379")
 
         self.env = Env(grid_size = 20, max_steps = 200)  ## Here we just initialize a single env because this is not trainingand there is no need for those many envs, there isonly one env
         self.obs, info = self.env.reset()  ## Reset the env during this class initialization so that the step can go on in a loop
@@ -57,6 +63,8 @@ class Inference:
         self.obs, _, dones, truncated, self.info = self.env.step(flat_actions)
 
         state = self.env.state  ## Store the state class after step.. so that we can send hte JSON to frontend via router..3.
+        
+        #Build the game state dictionary
         game_state_payload = {
             "step": self.env.step_count,
             "heroes": {
@@ -94,5 +102,11 @@ class Inference:
 
         if self.info['terminal'] or all(dones) or truncated:
             self.obs_dict, self.info = self.env.reset()
+
+        #Serialize the python dictionary into a flat json string
+        json_payload = json.dumps(game_state_payload)
+
+        #Braodcast the JSON string over the TCP socket to Redis
+        self.redis_client.publish('game_frames', json_payload)  
 
         return game_state_payload

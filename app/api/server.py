@@ -1,4 +1,4 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, BackgroundTasks
 import uvicorn 
 import asyncio
 from app.api.inference import Inference 
@@ -6,20 +6,35 @@ import json
 
 
 inference = Inference(checkpoint_path = 'checkpoints/MAPPO_GridWorld_1781890067/step_4800000.pt')
-router = APIRouter(prefix = '/ws', tags = ['Combat'])
+router = APIRouter(prefix = '/api', tags = ['Control'])
 
-@router.websocket("/combat")
-async def inference_endpoint(websocket : WebSocket):  ## A websocket endpoint for the frontend to access
-    await websocket.accept()   ## Awaiting a conection of a websocket connection to this endpoint
-    print("[*]Viewer Connected")   ## If the await connection ran then we check via this message
+#The Background Worker
+#Thsi function in the background , completely detached from the HTTP request of the start endpoint.
+#Since the main end point returns the success flag, the uvicorn server can take the requests from other user...
+#This allows our uvicorn to not wait for the game frames generated..
+#The frames will be sent to the node.js backend through redis,,and then to the frontend via websocket connection
+async def run_game_loop():
+    print("[*] Background Task Started")
 
-    try:
-        while True:  ## Now send the data to browser repeatedly...
-            game_state_payload = inference.get_next_frame()  ## Get next frame and send it via web socket
-            await websocket.send_text(json.dumps(game_state_payload)) # Awaiting the control back here whenever the data is accepted at the receivers end
+    #Max steps
+    for _ in range(200):
+        #This calculates the frames and automatically send them through redis
+        inference.get_next_frame()
 
-            await asyncio.sleep(0.1)  ## Wait 0.1 sec for each frame so that the game runs at 10FPS (so that we cna see it clearly)
+        #Sleep for 0.1 seconds to get 10fps
+        await asyncio.sleep(0.1)
+    
+    print("[*] Game Over")
 
-    except WebSocketDisconnect:
-        print('[!] Viewer Disconnected...')
 
+#The main api endpoint
+@router.post("/start")
+async def start_simulation(background_taks : BackgroundTasks):
+    #Give the gaem loop to the fastapi's background thread
+    background_taks.add_task(run_game_loop)
+
+    #Return ok to the frontend
+    return{
+        "status" : "success",
+        "message" : "Broadcasting on redis port 6379"
+    }
