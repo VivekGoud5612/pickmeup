@@ -8,11 +8,11 @@ import torch.nn as nn
 class SwarmManager:  ## Normal class and is responsible for running 4 different agents.. and make this according to the trainer so that we cna use tha tdirectly.....
 
     def __init__(self, base_obs_dim : int = 24, hero_intent_dim : int = 24, global_obs_dim : int = 96, actions_dim : dict = None, alr : float = 3e-4, clr : float = 1e-3):  ### There are three heroes and their itnents get broadcasted to all agents after one pass...
-        hero_total_obs_dim = base_obs_dim + hero_intent_dim
+       # base_obs_dim = base_obs_dim + hero_intent_dim
 
-        self.tank_actor = Actor(hero_total_obs_dim)
-        self.dealer_actor = Actor(hero_total_obs_dim)
-        self.healer_actor = Actor(hero_total_obs_dim)
+        self.tank_actor = Actor(base_obs_dim)
+        self.dealer_actor = Actor(base_obs_dim)
+        self.healer_actor = Actor(base_obs_dim)
 
         self.boss_actor = Actor(base_obs_dim)
 
@@ -79,16 +79,16 @@ class SwarmManager:  ## Normal class and is responsible for running 4 different 
         ## DUMMY INTENT PASS AND FIRST PASS
         dummy_hero_intent = torch.zeros((num_envs, 24), device = self.device) ## Create a dummy hero intent, so that we can start our first pass
 
-        tank_dist = self.tank_actor(torch.cat([tank_obs, dummy_hero_intent], dim = -1), tank_action_masks)  ## Tank intent.. first pass..
-        dealer_dist = self.dealer_actor(torch.cat([dealer_obs, dummy_hero_intent], dim = -1), dealer_action_masks)  ## concat along the last dimensions.. that is keep addign elements along the last dim
-        healer_dist = self.healer_actor(torch.cat([healer_obs, dummy_hero_intent], dim = -1), healer_action_masks)  # As that is a distribution we take the values of those distributions namely logits with dist.logits attribute
+        #tank_dist = self.tank_actor(torch.cat([tank_obs, dummy_hero_intent], dim = -1), tank_action_masks)  ## Tank intent.. first pass..
+        #dealer_dist = self.dealer_actor(torch.cat([dealer_obs, dummy_hero_intent], dim = -1), dealer_action_masks)  ## concat along the last dimensions.. that is keep addign elements along the last dim
+        #healer_dist = self.healer_actor(torch.cat([healer_obs, dummy_hero_intent], dim = -1), healer_action_masks)  # As that is a distribution we take the values of those distributions namely logits with dist.logits attribute
 
         ### TEAM BROADCAST - Heroes share the intent to all the other heroes in the same team.. And instead of logits which are sometimes -inf, and that into 0 gives us nan.. so we use probs
-        hero_intent_broadcast = torch.cat([tank_dist.probs, dealer_dist.probs, healer_dist.probs], dim = -1).detach() ## Detach removes this tensor from pytorchs computation graph... (detaches the tensor from automatic differentiation..)
+        #hero_intent_broadcast = torch.cat([tank_dist.probs, dealer_dist.probs, healer_dist.probs], dim = -1).detach() ## Detach removes this tensor from pytorchs computation graph... (detaches the tensor from automatic differentiation..)
 
-        tank_dist_final = self.tank_actor(torch.cat([tank_obs, hero_intent_broadcast], dim = -1), tank_action_masks)
-        dealer_dist_final = self.dealer_actor(torch.cat([dealer_obs, hero_intent_broadcast], dim = -1), dealer_action_masks)
-        healer_dist_final = self.healer_actor(torch.cat([healer_obs, hero_intent_broadcast], dim = -1), healer_action_masks)
+        tank_dist_final = self.tank_actor(tank_obs, tank_action_masks)
+        dealer_dist_final = self.dealer_actor(dealer_obs, dealer_action_masks)
+        healer_dist_final = self.healer_actor(healer_obs, healer_action_masks)
 
         tank_value = self.tank_critic(tank_global) 
         dealer_value = self.dealer_critic(dealer_global)
@@ -98,7 +98,7 @@ class SwarmManager:  ## Normal class and is responsible for running 4 different 
         return (
             (tank_dist_final, dealer_dist_final, healer_dist_final, boss_dist),
             (tank_value, dealer_value, healer_value, boss_value),
-            (hero_intent_broadcast)  ## So that we can store that in the rollout buffer
+            (dummy_hero_intent)  ## So that we can store that in the rollout buffer
         )
         
 
@@ -115,9 +115,9 @@ class SwarmManager:  ## Normal class and is responsible for running 4 different 
 
         return values  ## That is it.. simple but the actual problem is actor.. Now do we return the distributions based on intent or what ??
 
-    def get_dist(self, obs : torch.Tensor, intents : torch.Tensor, action_masks : torch.Tensor, role : AgentRole):  ## Let us store the intents at that time for the batch as well.. in the buffer
+    def get_dist(self, total_obs : torch.Tensor, action_masks : torch.Tensor, role : AgentRole):  ## Let us store the intents at that time for the batch as well.. in the buffer
 
-        total_obs = torch.cat([obs, intents], dim = -1)  ## For the whole batch we add stored intents to the stored obs
+        #total_obs = torch.cat([obs, intents], dim = -1)  ## For the whole batch we add stored intents to the stored obs
 
         if role == AgentRole.TANK:
             dist = self.tank_actor(total_obs, action_masks)
@@ -126,7 +126,7 @@ class SwarmManager:  ## Normal class and is responsible for running 4 different 
         elif role == AgentRole.HEALER:
             dist = self.healer_actor(total_obs, action_masks)
         else:
-            dist = self.boss_actor(obs, action_masks)
+            dist = self.boss_actor(total_obs, action_masks)
 
         return dist
 
@@ -173,7 +173,7 @@ class SwarmManager:  ## Normal class and is responsible for running 4 different 
         nn.utils.clip_grad_norm_(self.dealer_critic.parameters(), max_norm = 10.0)   ## we clip the update to max update of 10 to smooth the gradients     
         self.dealer_coptim.step()  ## Update weights
 
-        self.healer_aoptim.zero_grad() ## Reset gradients..
+        self.healer_coptim.zero_grad() ## Reset gradients..
         critic_loss[AgentRole.HEALER].backward() ## calculate gradients
         nn.utils.clip_grad_norm_(self.healer_critic.parameters(), max_norm = 10.0)   ## we clip the update to max update of 10 to smooth the gradients     
         self.healer_coptim.step()  ## Update weights

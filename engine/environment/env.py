@@ -47,8 +47,13 @@ class Env(gym.Env):  ## A Multi Agent Gym Environment for 4 agent system
         }
 
         self.episode_rewards = np.zeros(self.num_agents, dtype = np.float32)  ## To track the episodic reward in main, we calculate per env rewards ehre and store it in info
+        self.damage_dealt = np.zeros(self.num_agents, dtype = np.float32)
+        self.damage_blocked = np.zeros(self.num_agents, dtype = np.float32)
+        self.effective_heal = np.zeros(self.num_agents, dtype = np.float32)
+        self.utility_uses = np.zeros(self.num_agents, dtype = np.int32)
+        self.ultimate_uses = np.zeros(self.num_agents, dtype = np.int32)
 
-    def reset(self, curriculum_level : int = 5, seed : Optional[int] = None, options : Optional[Dict] = None) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:
+    def reset(self, curriculum_level : int = 1, seed : Optional[int] = None, options : Optional[Dict] = None) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:
         super().reset(seed = seed) ## Where is seed is used and what is seed I do not know.. Wrote in Notes, but is something to track the random resets and can be used to reproduce the same game..
 
         self.step_count = 0  # Update self.step count to 0 and start a new game
@@ -57,7 +62,12 @@ class Env(gym.Env):  ## A Multi Agent Gym Environment for 4 agent system
         obs_dict = self._get_observations()   ### A observation dictionary we use for taking action in step...
 
         self.episode_rewards = np.zeros(self.num_agents, dtype = np.float32)  ## To track the episodic reward in main, we calculate per env rewards ehre and store it in info
-        
+        self.damage_dealt = np.zeros(self.num_agents, dtype = np.float32)
+        self.damage_blocked = np.zeros(self.num_agents, dtype = np.float32)
+        self.effective_heal = np.zeros(self.num_agents, dtype = np.float32)
+        self.utility_uses = np.zeros(self.num_agents, dtype = np.int32)
+        self.ultimate_uses = np.zeros(self.num_agents, dtype = np.int32)
+
         info = {
             "action_masks" : self._get_action_masks(),  ## We have multiple masks for each agent..
             "active_masks" : self._get_active_masks(),   ##There is only single active mask  ## And we calculate handcrafted potentials here and the value comes in the main file..
@@ -78,10 +88,15 @@ class Env(gym.Env):  ## A Multi Agent Gym Environment for 4 agent system
 
         ActionSequencer.resolve_step(self.state, actions, processed_mask, action_masks)  ## Resolve step does everything.. inclusing action handling and everything...
 
-        reward_dict = self.reward_calc.calculate_decomposed_reward(old_state_snapshot, self.state, 0) ## Phase 0 here... The best thing instead of writing a new function, we can keep on running this for the first phase... But if we are going to use 
+        reward_dict = self.reward_calc.calculate_decomposed_reward(old_state_snapshot, self.state) ## Phase 0 here... The best thing instead of writing a new function, we can keep on running this for the first phase... But if we are going to use 
 
         rewards = reward_dict['combat_rewards'] + reward_dict['terminal_rewards']
         self.episode_rewards += rewards 
+        self.damage_dealt += self.state.damage_dealt  ## No need for a copy as we are just using that displaying... 
+        self.damage_blocked += self.state.damage_reduction_by_block + self.state.damage_reduction_by_nullification
+        self.effective_heal += self.state.effective_heal
+        self.utility_uses += (actions == ActionTypes.UTILITY)  ## Actions shape is (num_agents, )
+        self.ultimate_uses += (actions == ActionTypes.ULTIMATE)
 
         is_terminal = stateops.is_terminal(self.state)   ## IF the match ended... where all the members of one team lost..
         truncated = bool(self.step_count >= self.max_steps)  ## If the current step is equal to greater than the current step count then we will stop the game..
@@ -91,7 +106,7 @@ class Env(gym.Env):  ## A Multi Agent Gym Environment for 4 agent system
             was_alive = old_state_snapshot.hp[a_idx] > 0
             is_alive = self.state.hp[a_idx] > 0
 
-            if (was_alive and not is_alive) or is_terminal or truncated:  ## THe reason for adding truncated was to consider this for next dones as well, when then the game is truncated we need to have the dones to be True for the next dones in GAE computation..
+            if (was_alive and not is_alive) or is_terminal:  ## THe reason for adding truncated was to consider this for next dones as well, when then the game is truncated we need to have the dones to be True for the next dones in GAE computation..
                 terminated_array[a_idx] = 1.0 
 
         next_obs_dict = self._get_observations()  ## fOr the next set of actions to come, we need to send these out and give them to our actor
@@ -107,22 +122,31 @@ class Env(gym.Env):  ## A Multi Agent Gym Environment for 4 agent system
 
         if is_terminal or truncated:
             info['episode_rewards'] = self.episode_rewards.copy()
-
             team = stateops.get_winning_team(self.state)
             
             if team == Teams.HEROES:
-                info['win_rate'] = 1.0
+                info['hero_win_rate'] = 1.0
             
             elif team == Teams.MONSTERS:
-                info['win_rate'] = -1.0
+                info['boss_win_rate'] = 1.0
 
             else:
-                info['win_rate'] = 0.0
-
-            self.episode_rewards = np.zeros(self.num_agents, dtype = np.float32)  ## We reset so that the next game
-
+                info['draw_rate'] = 0.0
+                
             info['episode_length'] = self.step_count
             info['boss_hp'] = self.state.hp[AgentID.BOSS]
+            info['damage_dealt'] = self.damage_dealt.copy()
+            info['damage_blocked'] = self.damage_blocked.copy() 
+            info['effective_heal'] = self.effective_heal.copy()
+            info['utility_uses'] = self.utility_uses.copy()
+            info['ultimate_uses'] = self.ultimate_uses.copy()
+
+            self.episode_rewards = np.zeros(self.num_agents, dtype = np.float32)  ## We reset so that the next game
+            self.damage_dealt = np.zeros(self.num_agents, dtype = np.float32)
+            self.damage_blocked = np.zeros(self.num_agents, dtype = np.float32)
+            self.effective_heal = np.zeros(self.num_agents, dtype = np.float32)
+            self.utility_uses = np.zeros(self.num_agents, dtype = np.int32)
+            self.ultimate_uses = np.zeros(self.num_agents, dtype = np.int32)
 
         return next_obs_dict, rewards, terminated_array, truncated, info ## Classic gym style returns... No need for is_terminal...
 

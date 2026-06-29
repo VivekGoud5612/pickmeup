@@ -16,9 +16,7 @@ hp = np.zeros(num_agents, dtype = np.float32)
 hp = np.array([2.4, 34.5, 53, 0])
 boolean = np.array([True, False, True , True])
 
-print(hp > 0)
-print(torch.device("cpu"), isinstance(torch.device("cpu"), str), type(torch.device("cpu")))
-print(np.dtype(np.bool_).itemsize)
+print((hp >= 0).all())
 
 
 

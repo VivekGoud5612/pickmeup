@@ -13,7 +13,7 @@ class Inference:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"[*]Booting Inference Engine on {self.device}")
 
-        self.env = Env(grid_size = 20, max_steps = 200)  ## Here we just initialize a single env because this is not trainingand there is no need for those many envs, there isonly one env
+        self.env = Env(grid_size = 10, max_steps = 200)  ## Here we just initialize a single env because this is not trainingand there is no need for those many envs, there isonly one env
         self.obs, info = self.env.reset()  ## Reset the env during this class initialization so that the step can go on in a loop
 
         self.agents = MAgent(device = self.device)

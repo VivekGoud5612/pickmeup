@@ -143,7 +143,7 @@ class GameState:
         occupied = set()   ## A different approach of the same randomized positions ... gemini gave this so decided to keep it...
         
         ## For now we spawn the agents near the boss...
-        for a_idx in [3, 2, 1, 0]:
+        """for a_idx in [3, 2, 1, 0]:
             if self.teams[a_idx] == Teams.MONSTERS:
                 boss_pos = (np.random.randint(self.grid_size - 3, self.grid_size), np.random.randint(self.grid_size - 3, self.grid_size))
                 self.positions[a_idx] = np.array(boss_pos)  ## Convert the tuple to array and also assign the boss pos as there is only one..
@@ -162,8 +162,9 @@ class GameState:
 
                         self.team_visited_tiles[self.teams[a_idx], spawn_tuple[0], spawn_tuple[1]] = 1.0
                         break
+            """
 
-        '''for a_idx in range(self.num_agents):
+        for a_idx in range(self.num_agents):
             team = self.teams[a_idx]
             
             while True:
@@ -182,8 +183,8 @@ class GameState:
                     
                     # Mark the initial starting tile as visited for the team
                     self.team_visited_tiles[team, pos[0], pos[1]] = True
-                    break'''
-
+                    break
+                    
     def register_agent(self, agent_id : AgentID, identity : AgentIdentityFormat):
 
         self.roles[agent_id] = identity.role 
