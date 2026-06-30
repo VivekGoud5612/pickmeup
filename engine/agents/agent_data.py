@@ -67,7 +67,7 @@ class AgentIdentity:
         },
 
         AgentRole.BOSS : {
-            "max_hp" : 200,
+            "max_hp" : 300,
             'attributes' : Attributes(strength = 40, defence = 30, stamina = 100, recovery_rate = 7),
             "skills": {
                 SkillTypes.BASIC : Skill(min_range = 1, max_range = 2, cooldown = 3, stamina_cost = 5, strength_of_skill = 0.25),

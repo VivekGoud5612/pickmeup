@@ -116,9 +116,9 @@ class GameState:
                 self.skill_stamina_cost[role, action_idx] = skill.stamina_cost 
 
 
-    def reset(self, curriculum_level):  ## This is the one called in reset and is in charge of resetting all the state elements which change during run time
+    def reset(self, curriculum_level = 6):  ## This is the one called in reset and is in charge of resetting all the state elements which change during run time
 
-        dynamic_boss_max_hp = min(1000.0, 300.0 * (curriculum_level + 1))  ## Dynamically increase the max hp to 100 hp per curriculum level
+        dynamic_boss_max_hp = min(1000.0, 300.0 + 100*(curriculum_level + 1))  ## Dynamically increase the max hp to 100 hp per curriculum level
         spawn_radius = min(10, 1 + curriculum_level)  ## Distance between 1-10 spawn pos
 
         self.max_hp[AgentID.BOSS] = dynamic_boss_max_hp  ## Update that specific boss hp so that we can safely adapt the boss hp based on curriculum level
