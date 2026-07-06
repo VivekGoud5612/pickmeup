@@ -1,152 +1,130 @@
- total_rewards = {0: 0.0, 1: 0.0, 2: 0.0, 3: 0.0}
-        round_summary = {}
-        turn_order = [0, 1, 2, 3]
+import torch
+import torch.optim as optim
+import torch.nn as nn
+import torch.nn.functional as func
+from typing import Dict, Tuple
+import numpy as np
+
+# Assuming you import your networks and ValueNormalizer here
+from engine.agents.policy.network import SharedActor, SharedCritic
+# from engine.agents.policy.utils import ValueNormalizer 
+
+class MAPPOAgent:
+    def __init__(self, device: torch.device, lr_actor: float = 3e-4, lr_critic: float = 1e-3):
+        self.device = device
         
-        # 1. Track exactly who was alive at the start of this round
-        alive_at_start = {aid: self.gamestate.is_alive(aid) for aid in turn_order}
-
-        # 2. Main Turn Loop for active agents
-        for agent_id in turn_order:
-            agent = self.agents[agent_id]
-            
-            # If the agent is dead before their turn, skip them completely
-            if not self.gamestate.is_alive(agent_id):
-                continue
-
-            # Get current observations and action masks
-            obs = self.get_obs_for_agents(agent_id)
-            mask = self.gamestate.get_action_mask(agent_id)
-            
-            # Agent decides its action
-            action = agent.get_action(obs, mask, is_training=is_training)
-
-            # Execute the action inside the environment
-            summary = ActionHandler.perform_action(agent_id, action, self.gamestate)
-            round_summary[agent_id] = summary
-
-            # Calculate base rewards (Boss kills are already natively calculated here)
-            reward = self.calculate_reward(agent_id, summary)
-            total_rewards[agent_id] = reward
-
-            # Check if this specific action triggered match termination
-            done = self.gamestate.  is_terminal()
-            
-            # Store the standard step trajectory data
-            agent.policy.store_reward(reward, done)
-
-            # If an action ended the entire match, break the turn loop immediately
-            if done:
-                break
-
-        # 3. --- ONE-TIME HERO DEATH PENALTY ---
-        DEATH_PENALTY = -1.0  
-
-        for agent_id in turn_order:
-            agent = self.agents[agent_id]
-            
-            # Only apply if it's a Hero, they were alive at start, but are now dead
-            if agent_id != self.boss_id and alive_at_start[agent_id] and not self.gamestate.is_alive(agent_id):
-                # Apply penalty to environment step return dictionary
-                total_rewards[agent_id] += DEATH_PENALTY 
-                
-                # Retroactively apply penalty to their last action's memory slot
-                if len(agent.policy.memory["rewards"]) > 0:
-                    agent.policy.memory["rewards"][-1] += DEATH_PENALTY
-                    agent.policy.memory["dones"][-1] = True
- 
-        # 4. --- GLOBAL TERMINAL FALLBACK ---
-        # If the match ended this round, find the surviving agents and close out their memory flags
-        if self.gamestate.is_terminal():
-            for agent_id in turn_order:
-                agent = self.agents[agent_id]
-                
-                # If they survived the match but it abruptly ended, flip their last 'done' to True
-                if self.gamestate.is_alive(agent_id):
-                    if len(agent.policy.memory["dones"]) > 0:
-                        agent.policy.memory["dones"][-1] = True
-
-        # 5. Advance cooldowns and return normalized observations
-        self.gamestate.update_cooldowns()
-        return self._get_all_observations(), total_rewards, self.gamestate.is_terminal(), round_summary
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    def calculate_reward(self,agent_id:int,summary:Dict)->float:
-        reward=-0.01
-        ident =self.gamestate.identities[agent_id]
-        role=ident.role
-
-        my_hp_ratio=self.gamestate.hp[agent_id]/ident.stats.max_hp
-        boss_hp_ratio=self.gamestate.hp[self.boss_id]/self.gamestate.identities[self.boss_id].stats.max_hp
-
-        if summary.get("action_type") == "move" and summary.get("moved") is True:
-            reward += 0.02
-
-        combat=summary.get("combat_stats") or{}
-        target_id=combat.get("target_id")
-
-        if role!="Boss" and combat.get("damage_dealt",0)>0:
-            shared_team_reward=(combat["damage_dealt"] * 0.1)/10.0
-            reward += shared_team_reward
-
-        if combat:
-
-            if role=="Dealer":
-                dmg=combat.get("damage_dealt",0)
-
-                multiplier=2.0 if boss_hp_ratio<0.3 else 1.0
-                reward+=((dmg*multiplier*0.6))/10.0
-
-            elif role=="Tank":
-                if combat.get("blocked"):
-
-                    reward+=(8.0 if boss_hp_ratio>0.5 else 4.0)/10.0
-
-                reward+=((combat.get("damage_dealt",0)*0.3)/10.0)
-
-            elif role=="Healer":
-                heal_amt=combat.get("healed",0)
-
-                if target_id is not None and heal_amt>0:
-                    t_hp_ratio_before=combat.get("target_hp_ratio_before",1.0)
-
-                    if t_hp_ratio_before<0.2:
-                        reward+=2.0
-                    else:
-                        reward+=((heal_amt*0.8)/10.0)
-
-                    if my_hp_ratio<0.25 and target_id!=agent_id:
-                        reward-=0.5
-            
-            elif role=="Boss":
-                dmg=combat.get("damage_dealt",0)
-
-                if target_id is not None:
-                    t_role=self.gamestate.identities[target_id].role
-                    t_hp_ratio_before=combat.get("target_hp_ratio_before",1.0)
-
-                    boss_reward=dmg*1.0
-
-                    if t_role in ["Healer","Dealer"]:
-                        boss_reward*=1.5
-
-                    if t_hp_ratio_before<0.25:
-                        boss_reward*=2.0
-                    
-                    reward+=(boss_reward/10.0)
-
-                    if not self.gamestate.is_alive(target_id):
-                        reward+=5.0
+        # 1. Initialize Decoupled Networks
+        self.actor = SharedActor().to(device)
+        self.critic = SharedCritic().to(device)
         
-        return float(reward)
+        # 2. Independent Optimizers (The key to preventing the Critic Bully effect)
+        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=lr_actor, eps=1e-5)
+        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=lr_critic, eps=1e-5)
+        
+        self.value_normalizer = ValueNormalizer()
+        
+        # Hyperparameters
+        self.eps_clip = 0.2
+        self.ent_coef = 0.01
+        self.max_grad_norm = 10.0
+
+    @torch.no_grad()
+    def get_actions_and_values(self, obs: np.ndarray, global_state: np.ndarray, 
+                               roles: np.ndarray, action_masks: np.ndarray, is_training: bool = True) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Lightning-fast batched inference for Rollout Collection"""
+        self.actor.eval()
+        self.critic.eval()
+        
+        E, A = roles.shape
+        
+        # Flatten batch dimensions for maximum GPU throughput
+        t_obs = torch.as_tensor(obs, dtype=torch.float32, device=self.device).view(E * A, -1)
+        t_global = torch.as_tensor(global_state, dtype=torch.float32, device=self.device).view(E * A, -1)
+        t_roles = torch.as_tensor(roles, dtype=torch.long, device=self.device).view(E * A)
+        t_masks = torch.as_tensor(action_masks, dtype=torch.bool, device=self.device).view(E * A, -1)
+
+        # --- Actor Pass ---
+        dist = self.actor(t_obs, t_roles, t_masks)
+        
+        if is_training:
+            actions = dist.sample()
+        else:
+            actions = torch.argmax(dist.probs, dim=-1)
+            
+        log_probs = dist.log_prob(actions)
+
+        # --- Critic Pass ---
+        norm_values = self.critic(t_global, t_roles)
+        # Denormalize immediately so the RolloutBuffer stores raw values for accurate PBRS math
+        raw_values = self.value_normalizer.denormalize(norm_values)
+
+        # Reshape back to Environment Format (E, A) and kick back to CPU NumPy
+        return (actions.view(E, A).cpu().numpy(), 
+                log_probs.view(E, A).cpu().numpy(), 
+                raw_values.view(E, A).cpu().numpy())
+
+    def update(self, batch: Dict[str, torch.Tensor]) -> Dict[str, float]:
+        """Runs the PPO Update on a randomized, flattened mini-batch"""
+        self.actor.train()
+        self.critic.train()
+
+        # Unpack batch (Already flattened to 1D/2D by RolloutBuffer generator)
+        b_obs = batch['obs'].to(self.device)
+        b_global = batch['global_state'].to(self.device)
+        b_roles = batch['roles'].to(self.device)
+        b_actions = batch['actions'].to(self.device)
+        b_log_probs = batch['log_probs'].to(self.device)
+        b_advs = batch['advantages'].to(self.device)
+        b_returns = batch['returns'].to(self.device)
+        b_act_masks = batch['action_masks'].to(self.device)
+        b_active_masks = batch['active_masks'].to(self.device) # Shape: (batch_size,)
+
+        # Safe divisor for active masking to prevent div-by-zero if everyone is dead in this batch
+        active_sum = torch.clamp(b_active_masks.sum(), min=1.0)
+
+        # ==========================================
+        # 1. CRITIC UPDATE (Isolated)
+        # ==========================================
+        self.value_normalizer.update(b_returns)
+        norm_returns = self.value_normalizer.normalize(b_returns)
+        
+        pred_values = self.critic(b_global, b_roles)
+        raw_critic_loss = func.huber_loss(pred_values, norm_returns, reduction='none')
+        
+        # Apply Active Mask (Ignore dead agents)
+        critic_loss = (raw_critic_loss * b_active_masks).sum() / active_sum
+
+        self.critic_optimizer.zero_grad()
+        critic_loss.backward()
+        nn.utils.clip_grad_norm_(self.critic.parameters(), self.max_grad_norm)
+        self.critic_optimizer.step()
+
+        # ==========================================
+        # 2. ACTOR UPDATE (Isolated)
+        # ==========================================
+        # Normalize advantages at the mini-batch level for stability
+        b_advs = (b_advs - b_advs.mean()) / (b_advs.std() + 1e-8)
+
+        dist = self.actor(b_obs, b_roles, b_act_masks)
+        new_log_probs = dist.log_prob(b_actions)
+        entropy = dist.entropy()
+
+        ratios = torch.exp(new_log_probs - b_log_probs)
+        surr1 = ratios * b_advs
+        surr2 = torch.clamp(ratios, 1.0 - self.eps_clip, 1.0 + self.eps_clip) * b_advs
+        
+        raw_actor_loss = -torch.min(surr1, surr2) - (self.ent_coef * entropy)
+        
+        # Apply Active Mask (Ignore dead agents so they don't corrupt the policy)
+        actor_loss = (raw_actor_loss * b_active_masks).sum() / active_sum
+
+        self.actor_optimizer.zero_grad()
+        actor_loss.backward()
+        nn.utils.clip_grad_norm_(self.actor.parameters(), self.max_grad_norm)
+        self.actor_optimizer.step()
+
+        return {
+            "actor_loss": actor_loss.item(), 
+            "critic_loss": critic_loss.item(),
+            "entropy": entropy.mean().item()
+        }

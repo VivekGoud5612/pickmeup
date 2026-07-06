@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from app.api import server
 
 app = FastAPI()
 
@@ -6,6 +7,8 @@ app = FastAPI()
 async def root():
     return {"message": "PickMeUp API"}
 
+app.include_router(server.router)
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=6545)
+    uvicorn.run(app, host = "127.0.0.1", port = 6545)

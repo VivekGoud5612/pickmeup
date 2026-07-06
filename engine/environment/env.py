@@ -1,169 +1,193 @@
-from .state import GameState 
-from typing import List, Dict, Any
-from engine.actions.action import ActionHandler
-from engine.agents.base_agent import BaseAgent
-from typing import Any, Dict, List
-from reward import Reward_Calculator
-import copy
+from engine.actions.action_sequencer import ActionSequencer
+from engine.environment.reward import RewardCalculator
+from engine.environment.observation import ObservationBuilder
+from typing import Dict, List, Any, Optional, Tuple
+from engine.utils.enums import AgentRole, Teams, SkillTypes , ActionTypes, AgentID
+from engine.agents.agent_data import AgentIdentity
+from engine.environment.state import GameState
+from engine.environment.state_ops import StateOperations as stateops
 
-class RaidEnv:
-    def __init__(self, grid_size: int = 20):
-        self.grid_size = grid_size
-        self.gamestate=None
-        self.agents = {
-            0: BaseAgent(0, "Tank",self.grid_size),
-            1: BaseAgent(1, "Dealer",self.grid_size),
-            2: BaseAgent(2, "Healer",self.grid_size),
-            3: BaseAgent(3, "Boss",self.grid_size)
+import gymnasium as gym 
+from gymnasium import spaces
+import numpy as np 
+from enum import Enum
+
+
+
+
+class Env(gym.Env):  ## A Multi Agent Gym Environment for 4 agent system
+    ## This environment outputs local observations for the actor and global state for the global critic
+
+    def __init__(self, grid_size : int = 20, max_steps : int = 200): ### We use the gym style APIs and returns .. here we have grid size as the parameter and max steps is the number of steps a certain game should run (That is the number of steps per epsode maybe)
+        super().__init__()  ### Call the constructor of gym.Env
+
+        self.grid_size = grid_size 
+        self.max_steps = max_steps 
+        self.step_count = 0
+        self.num_agents = 4  ## For now let us define the number of agents in env 
+
+        ## Instantiate all the data moving elements and some objects
+        self.state = GameState(self.num_agents, self.grid_size)  ## Initialze game state..
+        self.reward_calc = RewardCalculator()
+
+        ## Spaces in Gym... need to see what they are.. They are something we use to like define what action and observation spaces are...
+        self.action_spaces = spaces.MultiDiscrete([self.state.NUM_ACTIONS] * self.num_agents)  ## A space where there are 4 agents with 8 action options for each.. and MultiDiscrete maybe is something which is used to create a space object which is discrete across multiple dimensions..
+        self.observation_space = spaces.Dict({
+            "obs" : spaces.Box(low = -np.inf, high = np.inf, shape = (self.num_agents, ObservationBuilder.OBS_SIZE), dtype = np.float32),  ## Size (4, 24)
+            "roles" : spaces.Box(low = 0, high = 3, shape = (self.num_agents, self.state.NUM_ROLES), dtype = np.int32),
+            "global_state" : spaces.Box(low = -np.inf, high = np.inf, shape = (self.num_agents, ObservationBuilder.GLOBAL_STATE_SIZE), dtype = np.float32),  ## Size (4, 96),
+        })  ## Again note that we only one single critic, and the values and such are repeated for batch in rollout buffer...
+
+        ### Create agent identities, these 4 agents run in all the environments .. and it doesn't matter if we define them in the reset or init as we store everything inside the shared memory and update rollout buffer from there.
+        self.agent_dict = {
+            AgentID.TANK : AgentRole.TANK,
+            AgentID.DEALER : AgentRole.DEALER,
+            AgentID.HEALER : AgentRole.HEALER,
+            AgentID.BOSS : AgentRole.BOSS,
         }
 
-        self.hero_roles={"Tank":0,"Dealer":1,"Healer":2}
-        self.boss_id=3
-        self.reward_calc = Reward_Calculator()
-        self.step_count = 0
+        self.episode_rewards = np.zeros(self.num_agents, dtype = np.float32)  ## To track the episodic reward in main, we calculate per env rewards ehre and store it in info
+        self.damage_dealt = np.zeros(self.num_agents, dtype = np.float32)
+        self.damage_blocked = np.zeros(self.num_agents, dtype = np.float32)
+        self.effective_heal = np.zeros(self.num_agents, dtype = np.float32)
+        self.utility_uses = np.zeros(self.num_agents, dtype = np.int32)
+        self.ultimate_uses = np.zeros(self.num_agents, dtype = np.int32)
 
-    def reset(self):
-        self.gamestate = GameState(self.grid_size)
+    def reset(self, curriculum_level : int = 1, seed : Optional[int] = None, options : Optional[Dict] = None) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:
+        super().reset(seed = seed) ## Where is seed is used and what is seed I do not know.. Wrote in Notes, but is something to track the random resets and can be used to reproduce the same game..
 
-        for agent_id,agent in self.agents.items():
-            team="Boss" if agent.role=="Boss" else "Heroes"
+        self.step_count = 0  # Update self.step count to 0 and start a new game
+        self.state.reset(curriculum_level)  ## Each agent start at some randomized position as described in state.reset()
 
-            self.gamestate.register_agents(
-                agent_id=agent_id,
-                identity=agent.identity,
-                team=team,
-            )
+        obs_dict = self._get_observations()   ### A observation dictionary we use for taking action in step...
 
-        return self._get_all_observations()
+        self.episode_rewards = np.zeros(self.num_agents, dtype = np.float32)  ## To track the episodic reward in main, we calculate per env rewards ehre and store it in info
+        self.damage_dealt = np.zeros(self.num_agents, dtype = np.float32)
+        self.damage_blocked = np.zeros(self.num_agents, dtype = np.float32)
+        self.effective_heal = np.zeros(self.num_agents, dtype = np.float32)
+        self.utility_uses = np.zeros(self.num_agents, dtype = np.int32)
+        self.ultimate_uses = np.zeros(self.num_agents, dtype = np.int32)
+
+        info = {
+            "action_masks" : self._get_action_masks(),  ## We have multiple masks for each agent..
+            "active_masks" : self._get_active_masks(),   ##There is only single active mask  ## And we calculate handcrafted potentials here and the value comes in the main file..
+        }
+
+        return obs_dict, info
     
-    def _get_all_observations(self):
-        obs_dict = {}
-        for uid, agent in self.agents.items():
-            if agent.role == "Boss":
-                obs_dict[uid] = self.gamestate.get_boss_observations(uid)
-            else:
-                obs_dict[uid] = self.gamestate.get_heroes_observations(uid, self.hero_roles, self.boss_id)
-        return obs_dict
-
-   
-    def step(self, is_training: bool = True):
-
-        step_rewards = {}   ## Simple dictionary for agents.. no need to initialize values.
-        round_summary = {}   # Round summary
-        agent_action_summary : Dict[int ,Dict[str, Any]] = {}    # Agent action summary - I was thinking to log the actions and see how everything is working out.. I need a agent action dict
-        actions = {}
-
-        alive_at_start = {aid: self.gamestate.is_alive(aid) for aid in self.agents.keys()}
-        
-        state_copy = copy.deepcopy(self.gamestate)
-
-        for agent_id, agent in self.agents.items():  ## Having both agent id and agent object helps
-
-            if not self.gamestate.is_alive(agent_id):  ## Iterate to the next agent if the current agent is not alive
-                continue
-
-            obs = self.get_obs_for_agents(agent_id)  ## Observation for a single agent.... 
-            action_mask = self.gamestate.get_action_mask(agent_id)   #We are using a game state function to get the action mask .. which stores 1 for valid actions and 0 for invalid actions for that state.
-
-            action = agent.get_action(obs, action_mask, is_training)  ##Store all actions inside a dictionary to send them to action sequencer to transition states directly at once
-            actions[agent_id] = action  #Store them in dictionary with agent ids as keys
-
-        step_summary = ActionSequencer.resolve_step(actions, self.gamestate)  ##Get the summaries from ActionSequencer
-
-        #Need to calculate results next
-        for agent_id , summary in step_summary.items():  ##Looping over all the step summary dictionary which contains all the things the agents did
-
-            reward = self.reward_calc.calculate_reward(state_copy, self.gamestate, step_summary)
-            step_rewards[agent_id] = reward   ##Store the reward for each agent..
-            print(f'Step {self.step_count} ... {self.gamestate.identities[agent_id].role} is taking the action {actions[agent_id]} with reward {reward}')
-
-            done = not self.gamestate.is_alive(agent_id)
-            self.agents[agent_id].policy.store_reward(reward, done)
-
-        env_done = self.gamestate.is_terminal()
-        if env_done:
-            for agent in self.agents.values():
-                if len(agent.policy.memory["dones"]) > 0:
-                    agent.policy.memory["dones"][-1] = True
+    def step(self, actions : np.ndarray) -> Tuple[Dict[str, np.ndarray], np.ndarray, np.ndarray, bool, Dict[str, np.ndarray]]:
         
         self.step_count += 1
-        
-        return self._get_all_observations(), step_rewards, env_done
-                                                                                                                                                                                           
-        
-    def get_obs_for_agents(self,agent_id):
+        info = {}
 
-        if self.agents[agent_id].role=="Boss":
-            return self.gamestate.get_boss_observations(agent_id)
-        else:
-           return self.gamestate.get_heroes_observations(agent_id,self.hero_roles,self.boss_id)
-        
-    
-    def calculate_reward(self,agent_id:int,summary:Dict)->float:
-        reward=-0.01
-        ident =self.gamestate.identities[agent_id]
-        role=ident.role
+        old_state_snapshot = stateops.state_snapshot(self.state)
 
-        my_hp_ratio=self.gamestate.hp[agent_id]/ident.stats.max_hp
-        boss_hp_ratio=self.gamestate.hp[self.boss_id]/self.gamestate.identities[self.boss_id].stats.max_hp
+        processed_mask = np.zeros(self.num_agents, dtype = bool)  ## Size of agents and actions is the same, as each agent takesup one aaction
+        action_masks = self._get_action_masks()
+        active_masks = self._get_active_masks()
 
-        if summary.get("action_type") == "move" and summary.get("moved") is True:
-            reward += 0.02
+        ActionSequencer.resolve_step(self.state, actions, processed_mask, action_masks)  ## Resolve step does everything.. inclusing action handling and everything...
 
-        combat=summary.get("combat_stats") or{}
-        target_id=combat.get("target_id")
+        reward_dict = self.reward_calc.calculate_decomposed_reward(old_state_snapshot, self.state) ## Phase 0 here... The best thing instead of writing a new function, we can keep on running this for the first phase... But if we are going to use 
 
-        if role!="Boss" and combat.get("damage_dealt",0)>0:
-            shared_team_reward=(combat["damage_dealt"] * 0.1)/10.0
-            reward += shared_team_reward
+        rewards = reward_dict['combat_rewards'] + reward_dict['terminal_rewards']
+        self.episode_rewards += rewards 
+        self.damage_dealt += self.state.damage_dealt  ## No need for a copy as we are just using that displaying... 
+        self.damage_blocked += self.state.damage_reduction_by_block + self.state.damage_reduction_by_nullification
+        self.effective_heal += self.state.effective_heal
+        self.utility_uses += (actions == ActionTypes.UTILITY)  ## Actions shape is (num_agents, )
+        self.ultimate_uses += (actions == ActionTypes.ULTIMATE)
 
-        if combat:
+        is_terminal = stateops.is_terminal(self.state)   ## IF the match ended... where all the members of one team lost..
+        truncated = bool(self.step_count >= self.max_steps)  ## If the current step is equal to greater than the current step count then we will stop the game..
 
-            if role=="Dealer":
-                dmg=combat.get("damage_dealt",0)
+        terminated_array = np.zeros(self.num_agents, dtype = np.float32)  ## An array to check for dead agents in this round and if terminal, then terminate all the agents (For active mask)
+        for a_idx in range(self.num_agents):   
+            was_alive = old_state_snapshot.hp[a_idx] > 0
+            is_alive = self.state.hp[a_idx] > 0
 
-                multiplier=2.0 if boss_hp_ratio<0.3 else 1.0
-                reward+=((dmg*multiplier*0.6))/10.0
+            if (was_alive and not is_alive) or is_terminal:  ## THe reason for adding truncated was to consider this for next dones as well, when then the game is truncated we need to have the dones to be True for the next dones in GAE computation..
+                terminated_array[a_idx] = 1.0 
 
-            elif role=="Tank":
-                if combat.get("blocked"):
+        next_obs_dict = self._get_observations()  ## fOr the next set of actions to come, we need to send these out and give them to our actor
 
-                    reward+=(8.0 if boss_hp_ratio>0.5 else 4.0)/10.0
+        info = {
+            "action_masks" : action_masks,
+            "active_masks" : active_masks,
+            "old_hand" : reward_dict['old_handcrafted'],  ## Store the old and new potentials directly, No need for all of that reward dict and such.. This is easy to convert to numpy and share across memory
+            "new_hand" : reward_dict['new_handcrafted'],
+            "terminal" : is_terminal,
+        }
 
-                reward+=((combat.get("damage_dealt",0)*0.3)/10.0)
 
-            elif role=="Healer":
-                heal_amt=combat.get("healed",0)
-
-                if target_id is not None and heal_amt>0:
-                    t_hp_ratio_before=combat.get("target_hp_ratio_before",1.0)
-
-                    if t_hp_ratio_before<0.2:
-                        reward+=2.0
-                    else:
-                        reward+=((heal_amt*0.8)/10.0)
-
-                    if my_hp_ratio<0.25 and target_id!=agent_id:
-                        reward-=0.5
+        if is_terminal or truncated:
+            info['episode_rewards'] = self.episode_rewards.copy()
+            team = stateops.get_winning_team(self.state)
             
-            elif role=="Boss":
-                dmg=combat.get("damage_dealt",0)
+            if team == Teams.HEROES:
+                info['hero_win_rate'] = 1.0
+            
+            elif team == Teams.MONSTERS:
+                info['boss_win_rate'] = 1.0
 
-                if target_id is not None:
-                    t_role=self.gamestate.identities[target_id].role
-                    t_hp_ratio_before=combat.get("target_hp_ratio_before",1.0)
+            else:
+                info['draw_rate'] = 0.0
+                
+            info['episode_length'] = self.step_count
+            info['boss_hp'] = self.state.hp[AgentID.BOSS]
+            info['damage_dealt'] = self.damage_dealt.copy()
+            info['damage_blocked'] = self.damage_blocked.copy() 
+            info['effective_heal'] = self.effective_heal.copy()
+            info['utility_uses'] = self.utility_uses.copy()
+            info['ultimate_uses'] = self.ultimate_uses.copy()
 
-                    boss_reward=dmg*1.0
+            self.episode_rewards = np.zeros(self.num_agents, dtype = np.float32)  ## We reset so that the next game
+            self.damage_dealt = np.zeros(self.num_agents, dtype = np.float32)
+            self.damage_blocked = np.zeros(self.num_agents, dtype = np.float32)
+            self.effective_heal = np.zeros(self.num_agents, dtype = np.float32)
+            self.utility_uses = np.zeros(self.num_agents, dtype = np.int32)
+            self.ultimate_uses = np.zeros(self.num_agents, dtype = np.int32)
 
-                    if t_role in ["Healer","Dealer"]:
-                        boss_reward*=1.5
+        return next_obs_dict, rewards, terminated_array, truncated, info ## Classic gym style returns... No need for is_terminal...
 
-                    if t_hp_ratio_before<0.25:
-                        boss_reward*=2.0
-                    
-                    reward+=(boss_reward/10.0)
 
-                    if not self.gamestate.is_alive(target_id):
-                        reward+=5.0
+    def close(self):   ## Simple function which does nothing, but closes the current environment (Used after all the work is complete and it is time to close the game..)
+        pass 
+
+    
+    def _get_observations(self) -> Dict[str, np.ndarray]:
+
+        env_obs = np.zeros((self.num_agents, ObservationBuilder.OBS_SIZE), dtype = np.float32)  ## Contains all the individual observations. so the size of this array after transformation is (4, 24).. for actors
+        env_roles = np.zeros((self.num_agents, self.state.NUM_ROLES), dtype = np.int32)
+        global_state_obs = np.zeros(ObservationBuilder.GLOBAL_STATE_SIZE, dtype = np.float32)  ## The same size, contains (96,) size of information
+
+        for a_idx in self.agent_dict.keys():
+            obs, role_ids = ObservationBuilder.build_partial_obs(self.state, a_idx)
+            env_obs[a_idx] = obs 
+            env_roles[a_idx] = role_ids 
+
+        global_state_obs = ObservationBuilder.build_full_state(self.state)  ## Building the full observation for the whole state at once for critic
+        global_state = np.tile(global_state_obs, (self.num_agents, 1))  ## TIle global state to each agent, so that we get a state array of size (num_agents, 96)
+
+        return {
+            "obs" : env_obs,
+            "role_ids" : env_roles,
+            "global_state_obs" : global_state, 
+        }
         
-        return float(reward)
+    def _get_action_masks(self):
+        action_masks = np.zeros((self.num_agents, self.state.NUM_ACTIONS), dtype = np.bool_)  ## Contains action mask for each agent
+
+        for a_idx in self.agent_dict.keys():
+            action_masks[a_idx] = stateops.get_action_mask(self.state, a_idx)
+        return action_masks 
+
+    def _get_active_masks(self):
+        active_masks = np.zeros(self.num_agents, dtype = bool)
+        active_masks = stateops.get_alive_mask(self.state)
+
+        return active_masks 
+
+    
+
+

@@ -1,0 +1,22 @@
+from enum import IntEnum
+import numpy as np
+import torch
+class Shit(IntEnum):
+    SHIT1 = 0
+    SHIT2 = 1
+    SHIT3 = 2
+    SHIT4 = 3
+
+num_agents = 4
+for shit in Shit:
+    print(shit)
+
+hp = np.zeros(num_agents, dtype = np.float32)
+
+hp = np.array([2.4, 34.5, 53, 0])
+boolean = np.array([True, False, True , True])
+
+print((hp >= 0).all())
+
+
+

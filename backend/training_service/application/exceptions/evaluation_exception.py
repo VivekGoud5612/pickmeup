@@ -1,0 +1,2 @@
+class EvaluationNotFoundError(Exception):
+    pass

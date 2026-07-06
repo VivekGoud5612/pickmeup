@@ -1,24 +1,34 @@
 from engine.agents.agent_data import AgentIdentity
-from engine.agents.ppo.agent import Agent
+from engine.agents.policy.agent import Agent
+from typing import List
+from engine.environment.observation import Observation
+from engine.actions.action import ActionTypes
+import numpy as np
+from engine.environment.state import GameState 
+from engine.environment.env import AgentID
 
 class BaseAgent:
-    def __init__(self,agent_id :int ,role :str,grid_size):
-        identity_factory=AgentIdentity()
-        self.identity=identity_factory.create_identity(agent_id,role,grid_size)
 
-        self.id=self.identity.id
-        self.role=self.identity.role
-        self.pos=list(self.identity.pos)
-        self.stats=self.identity.stats
-        self.action_space_size=self.identity.action_space_size
+    def __init__(self, agent_id : AgentID, role : AgentRole):  ## We create 4 objects of this base agent in init of env
+      
+        self.identity = AgentIdentity.create_identity(agent_id, role)  # Here we create a pure object of the agent, and the copy the information to state as pure arrays..
+        self.agent = Agent(agent_id, role)
 
-        self.policy=Agent(18,self.action_space_size,self.id,self.role)
+    def get_action_and_log_probs(self, state : GameState, observation : np.ndarray, role_ids : np.ndarray, action_mask : np.ndarray, is_training : bool):
+        
+        action_idx, log_probs = self.agent.get_action(observation, role_ids, action_mask, is_training)
 
+        action_idx = action_idx.item()  ## we take the item of a tensor and it converts that to a simple integer
+        log_probs_numpy_array = log_probs.numpy()  ## Numpy method of tensor
 
-    def get_action(self,observation,action_mask,is_training):
-        if self.policy is not None:
-            action=self.policy.get_action(observation,action_mask,is_training)
-
+        if action_idx in ActionTypes:
+            action_type_enum = ActionTypes(action_idx)  ## If valid action - action type enum is equal to the number
+        
         else:
-            action=4
-        return action
+            action_type_enum = Actiontypes.WAIT 
+            state.invalid_actions[agent_id] = True 
+
+        return action_type_enum, log_probs 
+
+
+            
