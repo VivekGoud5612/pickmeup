@@ -1,54 +1,44 @@
-Vivek Goud Cheruku
-AI Engineer | Systems Architect | Robotics & Multi-Agent Systems
-I am a Computer Science Engineering student focused on the intersection of Agentic AI, Reinforcement Learning, and Distributed Systems. I specialize in building "from-scratch" engines that turn theoretical research into robust, scalable, and observable production services.
+PickMeUp: Multi-Agent Reinforcement Learning Engine
+PickMeUp is a production-grade framework designed for Multi-Agent Reinforcement Learning (MARL) and autonomous decision-making research. It transitions RL training from a passive script-based process into a modular, observable, and agentic-driven service.
 
-#### Core Focus Areas
-Agentic AI & MARL: Designing Multi-Agent Reinforcement Learning frameworks with complex, self-optimizing pipelines.
+Project Architecture & Design
+The system follows a layered architecture utilizing Domain-Driven Design (DDD) to ensure scalability and reliability:
 
-Systems Engineering: Crafting high-performance backends using POSIX shared memory, C++, and Python with Domain-Driven Design (DDD).
+Domain Layer: Contains core business logic, including entities (TrainingRun, Checkpoint, TrainingConfiguration), value objects (RewardWeights, HyperParameters, PerformanceMetrics), and domain-specific enums.
 
-Robotics & Simulation: Engineering 3D agent environments, sensor fusion, and SLAM-based navigation architectures.
+Application Layer: Coordinates domain objects to perform actions like training initialization, checkpoint saving, and configuration updates.
 
-VLA & Transformers: Researching the application of Vision-Language-Action models in autonomous decision-making.
+Infrastructure Layer: Handles persistence, database mapping via SQLAlchemy, and communication with external tools or services.
 
-🛠 Technical Toolkit
-Languages: C++, Python 3.10+, SQL.
+Presentation Layer: Exposes the system via structured API endpoints, utilizing Pydantic models for data validation and service interaction.
 
-Backend & Architecture: FastAPI, Distributed Microservices, Domain-Driven Design (DDD), SQLAlchemy, Redis.
+Current Implementation & Capabilities
+The engine provides a robust foundation for multi-agent optimization:
 
-AI/ML: PyTorch, MAPPO/PPO, LLM Agentic Workflows (ReAct, LangGraph), Transformer Architectures.
+Telemetry & Observability: Real-time tracking of episodic statistics, including reward distribution, damage mitigation, healing efficacy, and ultimate/utility ability usage.
 
-Infrastructure: CI/CD Pipelines, Docker, ROS2, Simulation Engines (Gazebo/Isaac Sim).
+Configuration Management: Version-controlled training configurations utilizing a family_id system to track hyperparameter evolution and lineage.
 
-🏗 Featured Projects
-PickMeUp: A Self-Optimizing Agentic Engine
-An advanced MARL simulation and orchestration framework.
+Agentic Wrapper: An orchestration layer that monitors training telemetry to deduce performance patterns, enabling automated configuration tuning and performance analysis.
 
-Agentic Wrapper: Built an LLM-based "Manager" that monitors training telemetry, deduces performance gaps, and autonomously adjusts hyperparameters/reward weights.
+State Serialization: Clean state extraction, allowing for integration with LLM-based agents to perform "Reasoning + Acting" (ReAct) loops.
 
-Production Architecture: Decoupled engine design using a clean DDD approach (Domain, Application, Infrastructure layers) to ensure modularity and scalability.
+Future Roadmap & Research Interests
+The project is continuously evolving toward deeper integration with autonomous robotics and real-world AI applications:
 
-Continuous Improvement: Implemented structured state-serialization, enabling the agent to "think" via ReAct loops and iterate on training configurations based on historical metrics.
+Advanced Simulation: Scaling from 2D grid-based environments to 3D high-fidelity physics engines for complex robotic dynamics.
 
-Autonomous Navigation & SLAM Research
-Research Focus: Exploring self-improvement in open-world 3D environments, focusing on world models and algorithmic efficiency for optimization tasks.
+Robotic Integration: Implementation of human-robot joint dynamics and motion planning architectures inspired by industrial robotics.
 
-Technical Stack: Implementing Bottom-Up Agentic Architectures in grid-based environments with future expansion into 3D world models and advanced Reinforcement Learning.
+Navigation & Perception: Integrating SLAM-based pathfinding and sensor fusion modules to enhance autonomous navigation.
 
-📈 Philosophy & Approach
-I believe that the best AI systems are built on clean infrastructure. My approach is defined by:
+World Models & VLA: Researching Vision-Language-Action (VLA) transformer architectures to enable agents to reason about their environment through raw visual input.
 
-From-Scratch Engineering: I build components from the ground up to deeply understand the hardware-software interface.
+Autonomous Agentic Systems: Expanding the agentic wrapper to support RAG-based analysis of historical training runs, allowing the engine to learn from past failures and optimizations.
 
-Product-Grade Quality: I prioritize observability, testability, and structured schema design (Pydantic/DDD) in every AI pipeline.
-
-Cross-Disciplinary Rigor: I combine deep mathematical foundations (Linear Algebra, Probability/Stats) with practical system design to solve problems that others view as "black boxes."
-
-📧 Let’s Connect
-LinkedIn: linkedin.com/in/vivekgoudcheruku
-
+Contact
 GitHub: github.com/VivekGoud5612
 
-Email: vivekgoud.ch@gmail.com
+LinkedIn: linkedin.com/in/vivekgoudcheruku
 
-Always looking for opportunities in Frontier AI, Robotics Software Engineering, and autonomous system architecture.
+Email: vivekgoud.ch@gmail.com
