@@ -66,6 +66,8 @@ class StartTrainingUseCase:
         return HyperParameters(
             learning_rate = request.hyperparameters.learning_rate,
 
+            num_envs = request.hyperparameters.num_envs,
+            
             gamma = request.hyperparameters.gamma,
             gae_lambda = request.hyperparameters.gae_lambda,
 

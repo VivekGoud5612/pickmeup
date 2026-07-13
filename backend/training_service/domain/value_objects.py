@@ -15,6 +15,8 @@ class HyperParameters:
     """
     learning_rate : float
 
+    num_envs : int 
+    
     gamma : float 
     gae_lambda : float 
 
@@ -22,7 +24,7 @@ class HyperParameters:
     entropy_coeff : float 
 
     batch_size : int 
-    rollout_length : int  ## Because this is inherently different ffrom batch size...
+    rollout_length : int  ## Because this is inherently different from batch size...
     ppo_epochs : int  
 
     max_grad_norm : float 

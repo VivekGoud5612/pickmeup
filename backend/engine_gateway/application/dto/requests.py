@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from uuid import UUID 
 from pathlib import Path 
 
+from training_service.domain.enums import CheckpointType
+
 
 @dataclass(slots = True, frozen = True, kw_only = True)
 class StartEngineTrainingRequest:
@@ -45,7 +47,7 @@ class SaveEngineCheckpointRequest:
 
     training_run_id : UUID 
 
-    checkpoint_name : str | None = None 
+    checkpoint_type : CheckpointType  
 
 
 @dataclass(slots = True, frozen = True, kw_only = True)

@@ -17,6 +17,8 @@ class HyperParametersRequest:
     """
     learning_rate : float  
 
+    num_envs : int 
+    
     gamma : float 
     gae_lambda : float 
 
