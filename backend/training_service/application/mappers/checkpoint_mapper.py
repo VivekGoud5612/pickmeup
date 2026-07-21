@@ -7,7 +7,7 @@ from training_service.domain.entities.training_checkpoint import (
 from training_service.application.dto.checkpoint.responses import (
     CheckpointSummaryResponse,
     CheckpointCreatedResponse,
-    DeleteCheckpointResponse,
+    CheckpointDeletedResponse,
 )
 
 
@@ -36,7 +36,7 @@ class CheckpointMapper:
     ) -> CheckpointCreatedResponse:
 
         return CheckpointCreatedResponse(
-            checkpoint=CheckpointMapper.to_summary(
+            checkpoint_summary = CheckpointMapper.to_summary(
                 checkpoint
             ),
         )
@@ -45,8 +45,8 @@ class CheckpointMapper:
     @staticmethod 
     def to_deleted(
         checkpoint : TrainingCheckpoint,
-    ) -> DeleteCheckpointResponse:
+    ) -> CheckpointDeletedResponse:
 
-        return DeleteCheckpointResponse(
+        return CheckpointDeletedResponse(
             message=f"Checkpoint '{checkpoint.id}' deleted successfully."
         )

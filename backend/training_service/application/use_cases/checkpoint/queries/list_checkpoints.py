@@ -34,7 +34,7 @@ class ListCheckpointsUseCase:
         )
 
         return ListCheckpointsResponse(
-            checkpoints=[
+            checkpoints_summary=[
                 CheckpointMapper.to_summary(checkpoint)
                 for checkpoint in checkpoints
             ]

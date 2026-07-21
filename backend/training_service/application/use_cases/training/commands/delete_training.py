@@ -4,7 +4,7 @@ from training_service.application.dto.training.requests import (
     DeleteTrainingRequest,
 )
 from training_service.application.dto.training.responses import (
-    DeleteTrainingResponse,
+    TrainingDeletedResponse,
 )
 from training_service.application.repositories.training_repository import (
     TrainingRepository,
@@ -29,7 +29,7 @@ class DeleteTrainingUseCase:
     def execute(
         self,
         request: DeleteTrainingRequest,
-    ) -> DeleteTrainingResponse:
+    ) -> TrainingDeletedResponse:
 
         training = self._training_repo.get_by_id(
             request.training_run_id

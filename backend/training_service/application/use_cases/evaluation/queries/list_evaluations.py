@@ -34,7 +34,7 @@ class ListEvaluationsUseCase:
         )
 
         return ListEvaluationsResponse(
-            evaluations=[
+            evaluations_summary=[
                 EvaluationMapper.to_summary(evaluation)
                 for evaluation in evaluations
             ]

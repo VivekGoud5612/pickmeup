@@ -4,7 +4,7 @@ from training_service.application.dto.evaluation.requests import (
     DeleteEvaluationRequest,
 )
 from training_service.application.dto.evaluation.responses import (
-    DeleteEvaluationResponse,
+    EvaluationDeletedResponse,
 )
 from training_service.application.repositories.evaluation_repository import (
     EvaluationRepository,
@@ -29,7 +29,7 @@ class DeleteEvaluationUseCase:
     def execute(
         self,
         request: DeleteEvaluationRequest,
-    ) -> DeleteEvaluationResponse:
+    ) -> EvaluationDeletedResponse:
 
         evaluation = self._evaluation_repo.get_by_id(
             request.evaluation_id

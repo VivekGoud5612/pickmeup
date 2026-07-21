@@ -79,6 +79,8 @@ class StartTrainingUseCase:
             ppo_epochs = request.hyperparameters.ppo_epochs ,
 
             max_grad_norm = request.hyperparameters.max_grad_norm, 
+
+            checkpoint_save_interval = request.hyperparameters.checkpoint_save_interval,
         )
     
     def _create_reward_weights(self, request : StartTrainingRequest) -> RewardWeights:
@@ -107,11 +109,12 @@ class StartTrainingUseCase:
         return CurriculumSettings(
             boss_hp = request.curriculum_settings.boss_hp,
             spawn_radius = request.curriculum_settings.spawn_radius,  
-            max_episode_steps = request.curriculum_settings.max_episode_steps,
+            max_steps = request.curriculum_settings.max_steps,
 
             difficulty_level = request.curriculum_settings.difficulty_level,
 
             reward_scale = request.curriculum_settings.reward_scale,
+            grid_size = request.curriculum_settings.grid_size,
         )
     
 
@@ -163,5 +166,5 @@ class StartTrainingUseCase:
             created_at = training_run.created_at,
         )
         return TrainingCreatedResponse(
-            run = summary,
+            run_summary = summary,
         )

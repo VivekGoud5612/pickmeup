@@ -28,6 +28,8 @@ class HyperParameters:
     ppo_epochs : int  
 
     max_grad_norm : float 
+    
+    checkpoint_save_interval : int 
 
 
     def __post_init__(self) -> None:
@@ -144,7 +146,9 @@ class CurriculumSettings:
 
     spawn_radius : int  ## How far should agents spawn...
 
-    max_episode_steps: int
+    grid_size : int
+
+    max_steps: int
 
     difficulty_level: int   ## Int for now but later we can define this as a enum if we have set levels of difficulty..
 

@@ -6,7 +6,7 @@ from training_service.application.dto.training.responses import (
     TrainingSummaryResponse,
     TrainingCreatedResponse,
     TrainingProgressResponse,
-    DeleteTrainingResponse,
+    TrainingDeletedResponse,
 )
 
 
@@ -38,7 +38,7 @@ class TrainingMapper:
     ) -> TrainingCreatedResponse:
 
         return TrainingCreatedResponse(
-            summary=TrainingMapper.to_summary(training),
+            run_summary=TrainingMapper.to_summary(training),
         )
 
     
@@ -58,8 +58,8 @@ class TrainingMapper:
     @staticmethod
     def to_deleted(
         training : TrainingRun,
-    ) -> DeleteTrainingResponse:
+    ) -> TrainingDeletedResponse:
 
-        return DeleteTrainingResponse(
+        return TrainingDeletedResponse(
             message=f"Checkpoint '{training.id}' deleted successfully."
         )

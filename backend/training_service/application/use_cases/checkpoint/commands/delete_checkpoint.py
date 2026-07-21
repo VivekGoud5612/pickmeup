@@ -4,7 +4,7 @@ from training_service.application.dto.checkpoint.requests import (
     DeleteCheckpointRequest,
 )
 from training_service.application.dto.checkpoint.responses import (
-    DeleteCheckpointResponse,
+    CheckpointDeletedResponse,
 )
 from training_service.application.repositories.checkpoint_repository import (
     CheckpointRepository,
@@ -26,7 +26,7 @@ class DeleteCheckpointUseCase:
     def execute(
         self,
         request: DeleteCheckpointRequest,
-    ) -> DeleteCheckpointResponse:
+    ) -> CheckpointDeletedResponse:
 
         checkpoint = self._checkpoint_repo.get_by_id(
             request.checkpoint_id

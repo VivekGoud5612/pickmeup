@@ -31,6 +31,7 @@ class HyperParametersRequest:
 
     max_grad_norm : float 
 
+    checkpoint_save_interval : int 
 
 
 @dataclass(slots = True, kw_only = True)
@@ -66,8 +67,11 @@ class CurriculumSettingsRequest:
 
     spawn_radius : int  
 
-    max_episode_steps: int 
+    max_steps: int 
 
     difficulty_level: int  
 
     reward_scale: float = 1.0 
+
+    grid_size : int
+
