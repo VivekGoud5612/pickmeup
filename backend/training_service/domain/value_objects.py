@@ -15,6 +15,8 @@ class HyperParameters:
     """
     learning_rate : float
 
+    num_envs : int 
+    
     gamma : float 
     gae_lambda : float 
 
@@ -22,10 +24,12 @@ class HyperParameters:
     entropy_coeff : float 
 
     batch_size : int 
-    rollout_length : int  ## Because this is inherently different ffrom batch size...
+    rollout_length : int  ## Because this is inherently different from batch size...
     ppo_epochs : int  
 
     max_grad_norm : float 
+    
+    checkpoint_save_interval : int 
 
 
     def __post_init__(self) -> None:
@@ -142,7 +146,9 @@ class CurriculumSettings:
 
     spawn_radius : int  ## How far should agents spawn...
 
-    max_episode_steps: int
+    grid_size : int
+
+    max_steps: int
 
     difficulty_level: int   ## Int for now but later we can define this as a enum if we have set levels of difficulty..
 

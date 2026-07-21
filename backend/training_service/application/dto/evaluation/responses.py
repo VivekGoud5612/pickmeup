@@ -20,7 +20,7 @@ class EvaluationSummaryResponse:
 @dataclass(slots=True, frozen=True, kw_only=True)
 class EvaluationCreatedResponse:
 
-    evaluation: EvaluationSummaryResponse
+    evaluation_summary: EvaluationSummaryResponse
 
     message: str = "Evaluation started successfully."
 
@@ -28,9 +28,9 @@ class EvaluationCreatedResponse:
 @dataclass(slots=True, frozen=True, kw_only=True)
 class ListEvaluationsResponse:
 
-    evaluations: list[EvaluationSummaryResponse]
+    evaluations_summary: list[EvaluationSummaryResponse]
 
 @dataclass(slots = True, frozen = True, kw_only = True)
-class DeleteEvaluationResponse:
+class EvaluationDeletedResponse:
 
     message : str = "Evaluation Deleted Successfully"

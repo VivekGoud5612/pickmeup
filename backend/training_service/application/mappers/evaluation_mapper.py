@@ -7,7 +7,7 @@ from training_service.domain.entities.evaluation import (
 from training_service.application.dto.evaluation.responses import (
     EvaluationSummaryResponse,
     EvaluationCreatedResponse,
-    DeleteEvaluationResponse,
+    EvaluationDeletedResponse,
 )
 
 
@@ -36,7 +36,7 @@ class EvaluationMapper:
     ) -> EvaluationCreatedResponse:
 
         return EvaluationCreatedResponse(
-            summary=EvaluationMapper.to_summary(
+            evaluation_summary=EvaluationMapper.to_summary(
                 evaluation
             ),
         )
@@ -45,8 +45,8 @@ class EvaluationMapper:
     @staticmethod 
     def to_deleted(
         evaluation : EvaluationResult,
-    ) -> DeleteEvaluationResponse:
+    ) -> EvaluationDeletedResponse:
 
-        return DeleteEvaluationResponse(
+        return EvaluationDeletedResponse(
             message=f"Checkpoint '{evaluation.id}' deleted successfully."
         )

@@ -39,7 +39,7 @@ class TrainingCreatedResponse:
     """
     Response created after creating a training run
     """
-    run : TrainingSummaryResponse
+    run_summary : TrainingSummaryResponse
 
     message : str = "Training Created Successfully"
 
@@ -56,10 +56,10 @@ class TrainingProgressResponse:
 @dataclass(slots = True, frozen = True, kw_only = True)
 class ListTrainingRunsResponse:
 
-    runs : list[TrainingSummaryResponse]
+    runs_summary : list[TrainingSummaryResponse]
 
 
 @dataclass(slots = True, frozen = True, kw_only = True)
-class DeleteTrainingResponse:
+class TrainingdeletedResponse:
 
     message : str = "Training deleted Successfully"

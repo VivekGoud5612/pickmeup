@@ -24,11 +24,11 @@ class CheckpointCreatedResponse:  ## After saving I guess ...
     message: str = "Checkpoint saved successfully."
 
 @dataclass(slots=True, frozen=True, kw_only=True)
-class DeleteCheckpointResponse:
+class CheckpointDeletedResponse:
 
     message: str = "Checkpoint deleted successfully."
 
 @dataclass(slots=True, frozen=True, kw_only=True)
 class ListCheckpointsResponse:
 
-    checkpoints: list[CheckpointSummaryResponse]
+    checkpoints_summary : list[CheckpointSummaryResponse]

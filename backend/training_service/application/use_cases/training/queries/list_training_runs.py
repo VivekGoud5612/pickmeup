@@ -4,7 +4,7 @@ from training_service.application.repositories.training_repository import (
     TrainingRunRepository,
 )
 
-from training_serice.application.dto.training.requests import (
+from training_service.application.dto.training.requests import (
     ListTrainingRunsRequest
 )
 
@@ -28,8 +28,8 @@ class ListTrainingRunsUseCase:
         training_runs = self._training_repo.list_all()
 
         return ListCheckpointsResponse(
-            runs = [
+            runs_summary = [
                 TrainingMapper.to_summary(run)
-                for run in runs
+                for run in training_runs
             ]
             )
