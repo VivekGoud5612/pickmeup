@@ -12,7 +12,6 @@ class RewardCalculator:
         self.gamma = gamma 
 
         self.time_step_penalty = -0.1 
-        self.invalid_action_penalty = -0.1 
         self.win_bounty = 100.0 
         self.death_penalty = -0.50 
 
@@ -43,79 +42,6 @@ class RewardCalculator:
     def _boss_stamina_score(self, state : GameState):
         return float(state.stamina[self.boss_id] / state.max_stamina[self.boss_id])
 
-    def _formation_score(self, state : GameState):  ## Measure how well the formation of heroes is 
-
-        heroes_mask = stateops.get_team_alive_mask(state, Teams.HEROES)
-        active_positions = state.positions[heroes_mask]
-
-        if len(active_positions) <= 1: # If there are 0 or 1 agents alive then there is no meaning to calculate the formation score
-            return 0.0
-        
-        centroid = np.mean(active_positions, axis = 0)  # Does this mean that we are summing up all the pos (of shape [2,]) of all alive hero agents (axis = 0) and averaging over them ? Centroid  shape [2,].
-        distances = np.sum(np.abs(active_positions - centroid), axis = 1)   # Axis 1 means that each position array subtracts and np.abs check if there are no negatives..And np.sum (of an array of size lets say (3,2) along  axis 1 would mean add each row, so end result is (3,1))
-        
-        return -float(np.mean(distances))  ## This way we can see if the group is closer or not. If the negative is verylarge that means that the agents are spread out. This automatically affects the reward, so it tries to minimize that closer to 0, which would make the formation close..
-
-    
-    def _dealer_position_score(self, state : GameState) -> float : # Reward if dealer is at a safe range than the boss and how much damage he did to the boss
-        
-        if state.hp[self.dealer_id] <= 0 or state.hp[self.boss_id] <= 0:
-            return 0.0  #There is no meaning to calculate the reward of distance if both of them are dead.
-
-        distance = stateops.get_distance(state, self.dealer_id, self.boss_id)
-        return 1.0 if (2 <= distance <= 4) else -float(abs(distance - 2.5))  ## If the distance is out of that range then dealer gets a negative reward
-
-    def _healer_safety_score(self, state : GameState) -> float:
-
-        if state.hp[self.healer_id] <= 0:
-            return 0.0
-        score = 0.0
-
-        if state.hp[self.boss_id] > 0:
-            score += stateops.get_distance(state, self.healer_id, self.boss_id) * 0.5 ## We add this to score as we want to maximise this, that is maximise the distance    
-
-        if state.hp[self.tank_id] > 0:
-            score -= stateops.get_distance(state, self.healer_id, self.tank_id) * 0.5 ## We want to minimize this as want the distance between tank and healer to be low...
-
-        return float(score)
-
-    def _tanker_protection_score(self, state : GameState) -> float:  ## POsitioning of tank between dealer, healer and the boss...
-
-        if state.hp[self.tank_id] <= 0 or state.hp[self.boss_id] <= 0:
-            return 0.0
-
-        score = 0.0 
-        tank_to_boss = stateops.get_distance(state, self.tank_id, self.boss_id)
-
-        for squishy_id in [self.healer_id, self.dealer_id]:
-
-            if state.hp[squishy_id] > 0:
-                squishy_to_boss = stateops.get_distance(state, squishy_id, self.boss_id)  ## Distance between squishy agents and boss needs to be large
-                if squishy_to_boss < tank_to_boss: ## If tank is near to boss than those 2
-                    score += 2.0
-                else:
-                    score -= 0.5
-
-        return float(score)
-
-    def _boss_attack_weak_score(self, state : GameState): ## THis is just so that boss attacks weaker sections of the game.. or the ones which changing the games course like healer
-
-        if state.hp[self.boss_id] <= 0 or not np.any(state.hp[stateops.get_team_alive_mask(state, Teams.HEROES) > 0]):
-            return 0.0 
-
-        score = 0.0
-        boss_to_tank = stateops.get_distance(state, self.tank_id, self.boss_id)
-
-        for squishy_id in [self.healer_id, self.dealer_id]:
-            boss_to_squishy = stateops.get_distance(state, squishy_id, self.boss_id)
-            if boss_to_tank > boss_to_squishy:  # Boss should target weaker sections
-                score += 3.0
-
-            else:
-                score -= 0.5
-
-        return float(score)
-
     def _get_handcrafted_potential(self, state : GameState) -> Tuple[float, float]:
 
         potentials = np.zeros(state.num_agents, dtype = np.float32)
@@ -124,26 +50,19 @@ class RewardCalculator:
 
         hero_hp = self._hero_hp_score(state)
         boss_hp_penalty = -self._boss_hp_score(state)   ## a negative score for heroes as boss shouldnt be alive... 
-        formation = self._formation_score(state)  # The amount of spread(is negative and agent minimizes that)...
         hero_stamina = self._hero_stamina_score(state)
 
         boss_hp = self._boss_hp_score(state)
         hero_hp_penalty = -hero_hp  # a penalty for boss as heroes are still alive
         boss_stamina = self._boss_stamina_score(state)
 
-        dealer_pos = self._dealer_position_score(state)
-        healer_safe = self._healer_safety_score(state)
-        tank_prot = self._tanker_protection_score(state)
-
-        boss_squish = self._boss_attack_weak_score(state)
-
         ## Hero potential contains a lot of things summed weighted
-        shared_hero_pot = (hero_hp * 10.0) + (alive_heroes * 2.0) + (formation * 0.5) + (hero_stamina * 0.5) + (boss_hp_penalty * 10.0)
+        shared_hero_pot = (hero_hp * 10.0) + (hero_stamina * 1.5) + (boss_hp_penalty * 10.0)
 
-        potentials[self.dealer_id] = shared_hero_pot + dealer_pos 
-        potentials[self.tank_id] = shared_hero_pot + tank_prot 
-        potentials[self.healer_id] = shared_hero_pot + healer_safe
-        potentials[self.boss_id] = (boss_hp * 10.0) + (hero_hp_penalty * 10.0) + (boss_stamina * 1.5) + boss_squish 
+        potentials[self.dealer_id] = shared_hero_pot
+        potentials[self.tank_id] = shared_hero_pot 
+        potentials[self.healer_id] = shared_hero_pot
+        potentials[self.boss_id] = (boss_hp * 10.0) + (hero_hp_penalty * 10.0) + (boss_stamina * 1.5)
 
         return potentials
 
@@ -151,11 +70,9 @@ class RewardCalculator:
     def _combat_reward_for_dealer(self, state : GameState, rewards : np.ndarray):
 
         damage = state.damage_dealt[self.dealer_id]
-        stamina_spent = state.stamina_spent[self.dealer_id]
 
         if damage > 0:
-            efficiency = damage / (stamina_spent + 1.0)
-            rewards[self.dealer_id] += (damage * 0.5) + (efficiency * 2.0)
+            rewards[self.dealer_id] += (damage * 1.0)
 
     def _combat_reward_for_tank(self, state : GameState, rewards : np.ndarray):
 
@@ -165,32 +82,29 @@ class RewardCalculator:
         null_dam = state.damage_reduction_by_nullification[self.tank_id]
 
         if blocked_dam > 0:
-            rewards[self.tank_id] += blocked_dam * 1.5
+            rewards[self.tank_id] += blocked_dam * 1.0
 
         if null_dam > 0:
-            rewards[self.tank_id] += null_dam * 2.0
+            rewards[self.tank_id] += null_dam * 1.0  ## same weights as others so that the weights are dependant on neural network..
 
     def _combat_reward_for_healer(self, state : GameState, rewards : np.ndarray):
 
         rewards[self.healer_id] += state.damage_dealt[self.healer_id]  ## As healer also has a attack spell (basic we can do that)
 
         effective_heal = state.effective_heal[self.healer_id]
-        rewards[self.healer_id] += effective_heal * 0.8
+        rewards[self.healer_id] += effective_heal * 1.0
 
-        if effective_heal == 0 and state.stamina_spent[self.healer_id]:  # wasting stamina on 0 effective heal, maybe healer used it on agents with full hp
-            rewards[self.healer_id] -= 1.0
+        #if effective_heal == 0 and state.stamina_spent[self.healer_id]:  # wasting stamina on 0 effective heal, maybe healer used it on agents with full hp
+            #rewards[self.healer_id] -= 1.0
 
     def _combat_reward_for_boss(self, state : GameState, rewards : np.ndarray):
 
         effective_heal = state.effective_heal[self.boss_id]
-        rewards[self.boss_id] += effective_heal * 0.8
-
-        if effective_heal == 0 and state.stamina_spent[self.boss_id]:  # wasting stamina on 0 effective heal, maybe healer used it on agents with full hp
-            rewards[self.boss_id] -= 1.0
+        rewards[self.boss_id] += effective_heal * 1.0
 
         rewards[self.boss_id] += state.damage_dealt[self.boss_id]  # I guess there is no need for efficiency check, because boss is expected to be something with high stamina
 
-    def calculate_decomposed_reward(self, old_state : GameState, new_state : GameState, phase : int, old_values : np.ndarray = None, new_values : np.ndarray  = None):  ## This contains the phase based reward calculation or more specifically all three reward calculations
+    def calculate_decomposed_reward(self, old_state : GameState, new_state : GameState):  ## This contains the phase based reward calculation or more specifically all three reward calculations
 
         num_agents = new_state.num_agents
         
@@ -221,8 +135,9 @@ class RewardCalculator:
                 self._combat_reward_for_boss(new_state, combat_rewards)
 
             if new_state.exploration_bonus_triggered[idx] > 0:
-                combat_rewards[idx] += 0.5  ## Boost intrinsic motivation for exploring new states.
-        
+                combat_rewards[idx] += 0.05  ## Boost intrinsic motivation for exploring new states.
+
+        combat_rewards += self.time_step_penalty
 
         ### Terminal rewards
         heroes_mask = new_state.team_masks[Teams.HEROES]

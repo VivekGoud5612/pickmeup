@@ -1,4 +1,3 @@
-import random
 from typing import Dict, List, Tuple, Any
 from engine.agents.agent_data import AgentIdentityFormat, AgentIdentity
 from engine.utils.enums import AgentRole, Teams, SkillTypes, ActionTypes, AgentID
@@ -116,9 +115,9 @@ class GameState:
                 self.skill_stamina_cost[role, action_idx] = skill.stamina_cost 
 
 
-    def reset(self, curriculum_level = 6):  ## This is the one called in reset and is in charge of resetting all the state elements which change during run time
+    def reset(self, curriculum_level):  ## This is the one called in reset and is in charge of resetting all the state elements which change during run time
 
-        dynamic_boss_max_hp = min(1000.0, 300.0 + 100*(curriculum_level + 1))  ## Dynamically increase the max hp to 100 hp per curriculum level
+        dynamic_boss_max_hp = min(1000.0, 300.0 + 100* (curriculum_level + 1))  ## Dynamically increase the max hp to 100 hp per curriculum level
         spawn_radius = min(10, 1 + curriculum_level)  ## Distance between 1-10 spawn pos
 
         self.max_hp[AgentID.BOSS] = dynamic_boss_max_hp  ## Update that specific boss hp so that we can safely adapt the boss hp based on curriculum level
@@ -144,7 +143,7 @@ class GameState:
         occupied = set()   ## A different approach of the same randomized positions ... gemini gave this so decided to keep it...
         
         ## For now we spawn the agents near the boss...
-        for a_idx in [3, 2, 1, 0]:
+        """for a_idx in [3, 2, 1, 0]:
             if self.teams[a_idx] == Teams.MONSTERS:
                 boss_pos = (np.random.randint(self.grid_size - 3, self.grid_size), np.random.randint(self.grid_size - 3, self.grid_size))
                 self.positions[a_idx] = np.array(boss_pos)  ## Convert the tuple to array and also assign the boss pos as there is only one..
@@ -163,8 +162,9 @@ class GameState:
 
                         self.team_visited_tiles[self.teams[a_idx], spawn_tuple[0], spawn_tuple[1]] = 1.0
                         break
+            """
 
-        '''for a_idx in range(self.num_agents):
+        for a_idx in range(self.num_agents):
             team = self.teams[a_idx]
             
             while True:
@@ -183,8 +183,8 @@ class GameState:
                     
                     # Mark the initial starting tile as visited for the team
                     self.team_visited_tiles[team, pos[0], pos[1]] = True
-                    break'''
-
+                    break
+                    
     def register_agent(self, agent_id : AgentID, identity : AgentIdentityFormat):
 
         self.roles[agent_id] = identity.role 
@@ -201,14 +201,14 @@ class GameState:
                 pos = (random.randint(0, self.grid_size - 1), random.randint(0, 2))   ## If the randomized generated position is already occupied then we run the loop till we get a non occupied position
             self.positions[agent_id] = pos
 
-        elif identity.team == Teams.MONSTERS:
+        elif identity.team == Tems.MONSTERS:
             self.positions[agent_id] = (random.randint(self.grid_size-3, self.grid_size-1), random.randint(self.grid_size-3, self.grid_size-1)) ##  Assing a random position of boss in the last 3*3 grid of that big 20*20 grid
 
         self.positions[agent_id] = np.array(start_position)
         self.hp[agent_id] = self.max_hp[agent_id] 
         self.stamina[agent_id] = self.max_stamina[agent_id]
         
-        self.team_masks[identity.team][agent_id] = True 
+        self.team_masks[team][agent_id] = True 
         self.team_visited_tiles[self.teams[agent_id]] = self.positions[agent_id]
 
         role = identity.role 

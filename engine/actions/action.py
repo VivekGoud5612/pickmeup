@@ -56,6 +56,7 @@ class ActionHandler:
         enemies_in_range = stateops.get_enemies_in_range(state, agent_id, min_range, max_range)
 
         if len(enemies_in_range) == 0:
+            stateops.consume_stamina(state, agent_id, stamina_cost)
             return
 
         target_id = enemies_in_range[0]  # Standard way to take the very first enemy who is more closer 
@@ -69,9 +70,10 @@ class ActionHandler:
         max_range = state.skill_max_ranges[agent_id, ActionTypes.UTILITY]
         stamina_cost = state.skill_stamina_cost[agent_id, ActionTypes.UTILITY]
         
+        stateops.consume_stamina(state, agent_id, stamina_cost)
         enemies = stateops.get_enemies_in_range(state, agent_id, min_range = min_range, max_range = max_range)
         if len(enemies) > 0:
-            ActionHandler._apply_damage(state, agent_id, enemies[0], skill_mult, stamina_cost, ignore_defence=True)
+            ActionHandler._apply_damage(state, agent_id, enemies[0], skill_mult, 0.0, ignore_defence=True)
 
         
     @staticmethod 
@@ -82,9 +84,11 @@ class ActionHandler:
         max_range = state.skill_max_ranges[agent_id, ActionTypes.ULTIMATE]
         stamina_cost = state.skill_stamina_cost[agent_id, ActionTypes.ULTIMATE]
 
+        stateops.consume_stamina(state, agent_id, stamina_cost)
         enemies = stateops.get_enemies_in_range(state, agent_id, min_range = min_range, max_range = max_range)
-        if len(enemies) > 0:
-            ActionHandler._apply_damage(state, agent_id, enemies[0], skill_mult, stamina_cost)
+
+        if len(enemies) > 0: ## If no enemies then even though dealer chooses special stamina is not consumed, so I shifted that outside
+            ActionHandler._apply_damage(state, agent_id, enemies[0], skill_mult, 0.0)
          
 
     @staticmethod

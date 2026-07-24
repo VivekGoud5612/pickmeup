@@ -33,7 +33,7 @@ def shared_env_worker(remote : Connection, env_fn : Callable[[], Any], shm_names
                 # data corresponds to actions array slice of shape (num_agents,)
                 obs, reward, terminated, truncated, info = env.step(data)  ## These are the things returned by the environment - Standard gym format, truncated means if something like the buffer size is reached so it stops the env step process and we return True
 
-                if all(terminated >= 1) or info['terminal'] or truncated:  ## If all agents dead or is terminal (one team dead) or truncated..resert adn also store last obs
+                if (terminated >= 1).all() or info['terminal'] or truncated:  ## If all agents dead or is terminal (one team dead) or truncated..resert adn also store last obs
                     info['terminal_observation'] = obs.copy() ## To store the very last observation of this step (After the whole required number of steps run or the episode completes)
                     obs, _ = env.reset() 
 

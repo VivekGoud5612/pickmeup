@@ -83,6 +83,9 @@ class MAgent:
         running_actor = {r : 0.0 for r in AgentRole}
         running_critic = {r : 0.0 for r in AgentRole}  ## These are the sum of losses of individual agents for 4 epochs.. so we take the sum and average out per agent..
         total_entropy = 0.0
+        total_count = 0
+
+        self.value_normalizer.update(batch['returns'])  ## Calculate the running mean and all .. we update the normlaizer batch wise and use that for each role normlizing...
 
         ### Unpacking batch elements.. note that the batch shape is (batch_szie, num_agnets, ..)
         for step in range(ppo_epochs):
@@ -100,7 +103,7 @@ class MAgent:
                 active_sum = torch.clamp(b_active_masks.sum(), min = 1.0)  ## Sum of all the times that single agent was alive...
 
                 ## CRITIC UPDATE 
-                self.value_normalizer.update(b_returns)  ## Calculate the running mean and all
+                #self.value_normalizer.update(b_returns)  ## Calculate the running mean and all
                 normalized_returns = self.value_normalizer.normalize(b_returns) ## Shape (batch,)
 
                 pred_values = self.swarm.get_value(b_global, role)  ## Get values for the current role...
@@ -110,10 +113,11 @@ class MAgent:
                 ### ACTOR UPDATE 
                 b_advs = (b_advs - b_advs.mean()) / (b_advs.std() + 1e-8) ## A small time normalization of the advantages, so that we get small surr 1 and surr 2.. so that those things stabilize..
 
-                dist = self.swarm.get_dist(b_obs, b_intents, b_action_masks, role)  ## We calculate the action distributions again for the same obs which are already in the buffer
+                dist = self.swarm.get_dist(b_obs, b_action_masks, role)  ## We calculate the action distributions again for the same obs which are already in the buffer
                 new_log_probs = dist.log_prob(b_actions) ## And new logs to the same... I guess for the updated network these would change... So we wanted to compare old probs and new probs
                 entropy = dist.entropy()
                 total_entropy += entropy.mean().item() ## Mean of the whole batch entropies
+                total_count += 1
                 
                 ratios = torch.exp(new_log_probs - b_log_probs)  ## Comparing policy.. that is log probs
                 surr1 = ratios * b_advs
@@ -133,6 +137,6 @@ class MAgent:
         return{
             "actor_loss" : running_actor,
             "critic_loss" : running_critic,
-            "entropy" : total_entropy / ppo_epochs * len(AgentRole), ## Most recent one 
+            "entropy" : total_entropy / total_count, 
             }
             
