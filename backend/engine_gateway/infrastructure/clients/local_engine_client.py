@@ -12,6 +12,10 @@ from engine_gateway.application.contracts.engine_client import (
     EngineClient,
 )
 
+from engine_gateway.application.contracts.engine_event_publisher import (
+    EngineEventPublisher,
+)
+
 from training_service.application.dto.engine.requests import (
     StartEngineTrainingRequest,
     PauseEngineTrainingRequest,
@@ -19,14 +23,15 @@ from training_service.application.dto.engine.requests import (
     StopEngineTrainingRequest,
     EvaluateEngineCheckpointRequest,
     SaveEngineCheckpointRequest,
+    DeleteEngineCheckpointRequest,
 )
 
 from training_service.application.dto.engine.responses import (
     EngineTrainingStartedResponse,
     EngineStatusResponse,
     EngineMetricsResponse,
-    EngineEvaluationResponse,
-    EngineCheckpointResponse,
+    EngineCheckpointEvaluationResponse,
+    EngineCheckpointSavedResponse,
 )
 
 
@@ -43,45 +48,64 @@ class LocalEngineClient(EngineClient):
         self._engine = engine 
 
 
-    def initialize(self, request : StartEngineRequest,) -> Nnne:
+    def initialize(self, request : InitializeEngineTrainingRequest, publisher : EngineEventPublisher) -> None:
         """
-        Initialize the engine for a new training sessio
+        Initialize the engine for a new training session
+
+        Also thought of publisher comes from backend, but no need .. and thought of defining the publisher
+        in the constructor, but publisher is perisisted to the engine and not the client so to avoid duplication
         """
         self._engine.initializate(
             config = request.configuration,
             run_name = request.run_name,
+            publisher = publisher,
         )
 
 
-    def start(self) -> None:
+    def start(self, request : StartEngineTrainingRequest) -> EngineTrainingStartedResponse:
         self._engine.start()
 
+        return EngineTrainingStartedResponse(
+            status = self._engine.state,
+        )
 
-    def pause(self) -> None:
+    def pause(self) -> EngineStatusResponse:
     """
     Pause the current training session.
     """
         self._engine.pause()
 
+        return EngineStatusResponse(
+            status = self._engine.state,
+        )
 
-    def stop(self) -> None:
+
+    def stop(self) -> EngineStatusResponse:
     """
     Stop training.
     """
         self._engine.stop()
+
+        return EngineStatusResponse(
+            status = self._engine.state,
+        )
     
 
-    def resume(self) -> None:
+    def resume(self) -> EngineStatusResponse:
     """
     Resume a paused training session.
     """
         self._engine.resume()
 
+        return EngineStatusResponse(
+            status = self._engine.state,
+        )
+
     
     def save_checkpoint(
     self,
     request: SaveEngineCheckpointRequest,
-    ) -> EngineCheckpointResponse:
+    ) -> EngineCheckpointSavedResponse:
     """
     Save the current engine state.
     """
@@ -104,7 +128,7 @@ class LocalEngineClient(EngineClient):
     
     def load_checkpoint(
     self,
-    request: LoadCheckpointRequest,
+    request: LoadEngineCheckpointRequest,
     ) -> None:
     """
     Restore a previous checkpoint.
@@ -112,4 +136,24 @@ class LocalEngineClient(EngineClient):
 
         self._engine.load_checkpoint(
             request.path,
+        )
+
+
+    def delete_checkpoint(
+        self, 
+        request : DeleteEngineCheckpointRequest,
+    ) -> None:
+        
+        if request.checkpoint_path.exists():  ### Note that we get Path objects from DTOs, but are just simply strings favourible ?? 
+    
+    def evaluate_checkpoint(self, request : EvaluateEngineCheckpointRequest) -> EngineCheckpointEvaluationResponse:
+        """
+        Nothing much for now, just basic get metric function
+        """
+
+        metrics = self._engine.evaluate(request.checkpoint_path)
+
+        return EngineCheckpointEvaluationResponse(
+            checkpoint_path = request.checkpoint_path,
+            metrics = metrics,
         )

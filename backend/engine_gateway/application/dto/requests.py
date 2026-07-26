@@ -7,18 +7,23 @@ from pathlib import Path
 
 
 @dataclass(slots = True, frozen = True, kw_only = True)
-class StartEngineTrainingRequest:
+class InitializeEngineTrainingRequest:
     """
     Request to start a new training session
     inside RL engine
     """
     configuration : TrainingConfiguration
 
-    checkpoint_directory : Path 
+    checkpoint_directory : Path | None = None 
 
     device : str | None = None 
 
     run_name : str 
+
+
+@dataclass(slots = True, frozen = True, kw_only = True)
+class StartEngineTrainingRequest:
+    ...
 
 
 @dataclass(slots = True, frozen = True, kw_only = True)
@@ -41,9 +46,13 @@ class SaveEngineCheckpointRequest:
 
     checkpoint_name : str | None = None 
 
+@dataclass(slots = True, frozen = True, kw_only = True)
+class DeleteEngineCheckpointRequest:
+
+    checkpoint_path : Path
 
 @dataclass(slots = True, frozen = True, kw_only = True)
-class EvaluateCheckpointRequest:
+class EvaluateEngineCheckpointRequest:
 
-    checkpoint_path : str    ## Previously it was checkpoint id.. changed it..
+    checkpoint_path : Path    ## Previously it was checkpoint id.. changed it..
 

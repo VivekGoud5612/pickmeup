@@ -31,7 +31,7 @@ class TrainingEngine:
     engine (local engine client)
     """
 
-    def __init__(self, publisher : EngineEventPublisher) -> None:
+    def __init__(self) -> None:
 
         self._training_configuration = None 
         self._run_name = None 
@@ -51,13 +51,15 @@ class TrainingEngine:
 
         self._initialized = False
 
-        self._publisher = publisher   ## Get the object directly as an argument...
+        self._publisher = None  ## Get the object directly as an argument...
 
     
     def initialize(
         self,
         config : TrainingConfiguration,   ## Contains all the hyper parameters, reward weights and curriculum settings.. .. 
         run_name : str,   ## from ENGINE request DTO.. will be used in locla engine client...
+        checkpoint_directory : Path | None = None,
+        publisher : EngineEventPublisher,
     ) -> None:
 
         self._training_configuration = config   ## create tensor board, env, agent, rollout, workers and such..
@@ -65,11 +67,12 @@ class TrainingEngine:
 
         self._initialize_runtime()   ## For run time stats, this keeps track of important things during run tiem, so that we can pause or resume
         self._initialize_logging()  
-        self._initialize_checkpoint_directory()
+        self._initialize_checkpoint_directory(checkpoint_directory)
         self._initialize_environment()
         self._initialize_agent()
         self._initialize_buffer()
         self._initialize_update_metrics()   ## Needed for update method... Both losses and advantages
+        self._initialize_publisher(publisher)
 
         self._rollout_length = self._training_configuration.hyperparameters.rollout_length
 
@@ -106,6 +109,7 @@ class TrainingEngine:
             self._training_loop()
 
         except Exception as e:
+            self._state = EngineStatus.FAILED
             self._publisher.publish(
                 TrainingFailedEvent(
                     global_step = self._global_step,
@@ -598,9 +602,12 @@ class TrainingEngine:
         self._rolling_ultimate_uses = deque(maxlen=50)
 
     
-    def _initialize_checkpoint_directory(self) -> None:
+    def _initialize_checkpoint_directory(self, checkpoint_directory : Path | None = None) -> None:
+        
+        self._checkpoint_directory = checkpoint_directory
 
-        self._checkpoint_directory = Path(f"checkpoints/{self._run_name}")
+        if not checkpoint_directory:
+            self._checkpoint_directory = Path(f"checkpoints/{self._run_name}")
 
         self._checkpoint_directory.mkdir(
             parents=True,
@@ -655,6 +662,10 @@ class TrainingEngine:
 
         self._avg_entropy = 0
 
+
+    def _initialize_publisher(self, publisher : LocalEngineEventPublisher):
+
+        self._publisher = publisher 
 
     def _cleanup(self):
         """

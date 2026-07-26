@@ -23,6 +23,15 @@ from training_service.application.dto.checkpoint.responses import (
 from training_service.application.mappers.checkpoint_mapper import (
     CheckpointMapper,
 )
+from engine_gateway.infrastructure.engine_registry import (
+    EngineRegistry,
+)
+from engine_gateway.application.dto.requests import (
+    EngineCheckpointRequest,
+)
+from engine_gateway.application.dto.responses import (
+    EngineCheckpointResponse,
+)
 
 
 
@@ -45,7 +54,14 @@ class SaveCheckpointUseCase:
 
         training_run = self._training_repo.get_by_id(request.training_run_id)
 
-        checkpoint = self._create_checkpoint(request, training_run)
+        engine_client = self._engine_registry.get(request.training_run_id)
+        engine_request = EngineCheckpointRequest(
+            checkpoint_name = request.checkpoint_name,
+        )
+
+        engine_response = engine_client.save_checkpoint(engine_request)
+
+        checkpoint = self._create_checkpoint(request, training_run, engine_response)
 
         self._checkpoint_repo.save(checkpoint)
 
@@ -53,34 +69,22 @@ class SaveCheckpointUseCase:
 
         self._training_repo.update(training_run)
 
-        return self._create_response(checkpoint)
+        return CheckpointMapper.to_created(checkpoint)
 
 
     def _create_checkpoint(
         self,
         request: SaveCheckpointRequest,
-        training_run,
+        training_run : TrainingRun,
+        engine_response : EngineCheckpointResponse,
     ) -> TrainingCheckpoint:
 
         return TrainingCheckpoint(
             training_run_id=training_run.id,
             configuration_id=training_run.configuration_id,
             progress=training_run.progress,
-            checkpoint_type=request.checkpoint_type,
-            file_path=request.file_path,
+            checkpoint_type = engine_response.checkpoint_type,
+            file_path=engine_response.checkpoint_path,
             notes=request.notes,
+            created_at = engine_response.created_at,
         )
-
-    def _create_response(
-        self,
-        checkpoint: TrainingCheckpoint,
-    ) -> CheckpointCreatedResponse:
-
-        checkpoint_summary = CheckpointSummaryResponse(
-            id = checkpoint.id,
-            training_run_id = checkpoint.training_run_id,
-            progress = checkpoint.progress,
-            created_at = checkpoint.created_at,
-        )
-        
-        return CheckpointMapper.to_created(checkpoint)

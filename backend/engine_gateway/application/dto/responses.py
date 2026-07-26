@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, UTC
 from uuid import UUID
+from pydantic import field
 
 from training_service.domain.enums import TrainingStatus
 
@@ -24,7 +25,7 @@ class EngineTrainingStartedResponse:
 
     status: EngineStatus
 
-    started_at: datetime
+    started_at: datetime = field(default_factory = lambda : datetime.now(UTC))
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
@@ -45,22 +46,22 @@ class EngineMetricsResponse:
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
-class SaveEngineCheckpointResponse:
+class EngineCheckpointSavedResponse:
 
     checkpoint_path: Path
 
     checkpoint_type : CheckpointType
 
-    created_at: datetime
+    created_at: datetime = field(default_factory = lambda : datetime.now(UTC))
 
 @dataclass(slots=True, frozen=True, kw_only=True)
-class EngineEvaluationResponse:
+class EngineCheckpointEvaluationResponse:
 
-    checkpoint_path : str   ## Lets think if this is necessary
+    checkpoint_path : Path   ## Lets think if this is necessary
 
     metrics: PerformanceMetrics
 
-    completed_at: datetime
+    completed_at: datetime = field(default_factory = lambda : datetime.now(UTC))
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
