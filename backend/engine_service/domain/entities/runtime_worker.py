@@ -1,17 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import dataclass 
-from pydantic import field 
+from dataclasses import dataclass, field
 from datetime import datetime, UTC 
 from uuid import UUID 
 
 from engine.utils.enums import (
     EngineStatus,
 )
+from domain.value_objects import CheckpointMetaData
 
 
 @dataclass(slots = True, kw_only = True)
-class TrainingWorker:
+class RuntimeWorker:
 
     training_run_id : UUID 
 
@@ -20,6 +20,8 @@ class TrainingWorker:
     started_at : datetime
 
     finished_at : datetime | None = None 
+
+    latest_checkpoint : CheckpointMetaData | None   ## A run time state , but useful when checked for status
 
     def start(self) -> None:
         if self.status != EngineStatus.CREATED:

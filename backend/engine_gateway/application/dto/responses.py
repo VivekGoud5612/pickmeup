@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, UTC
 from uuid import UUID
-from pydantic import field
 
 from training_service.domain.enums import TrainingStatus
 

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .base import EngineEvent
+from engine.utils.enums import AgentRole
 
 
 @dataclass(slots=True, frozen=True, kw_only = True)
