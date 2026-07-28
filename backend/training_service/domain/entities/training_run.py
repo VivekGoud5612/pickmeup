@@ -37,7 +37,7 @@
                 raise RuntimeError("Training has already been started")  ## Because the first time we start the status needs to be created indicating the trainingrn object has just been created..
 
             self.status = TrainingStatus.RUNNING 
-            self.created_at = datetime.now(UTC)
+            self.started_at = datetime.now(UTC)
 
         def pause(self) -> None:
             if self.status != TrainingStatus.RUNNING:
@@ -51,11 +51,11 @@
             
             self.status = TrainingStatus.RUNNING 
 
-        def complete(self) -> None:
+        def stop(self) -> None:
             if self.status not in (TrainingStatus.RUNNING, TrainingStatus.PAUSED):
-                raise RuntimeError("Training cannot be completed")
+                raise RuntimeError("Training is not running or is not paused, so it cannot be stopped")
 
-            self.status = TrainingStatus.COMPLETED
+            self.status = TrainingStatus.STOP
             self.finished_at = datetime.now(UTC)
 
         def fail(self) -> None:
@@ -79,5 +79,5 @@
         def attach_checkpoint(self, checkpoint_id : UUID) -> None:   ## attach object to object...
             self.latest_checkpoint_id = checkpoint_id   ## Think of TrainingCheckpointConfig as a entity containing things like id, time and suhc.
 
-        def attach_config(seld, config_id : UUID) -> None:
+        def attach_config(self, config_id : UUID) -> None:
             self.configuration_id = config_id 

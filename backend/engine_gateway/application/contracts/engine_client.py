@@ -7,16 +7,16 @@ from training_service.application.dto.engine.requests import (
     PauseEngineTrainingRequest,
     ResumeEngineTrainingRequest,
     StopEngineTrainingRequest,
-    EvaluateCheckpointRequest,
-    SaveCheckpointRequest,
+    EvaluateEngineCheckpointRequest,
+    SaveEngineCheckpointRequest,
 )
 
 from training_service.application.dto.engine.responses import (
     EngineTrainingStartedResponse,
     EngineStatusResponse,
     EngineMetricsResponse,
-    EngineEvaluationResponse,
-    EngineCheckpointResponse,
+    EngineCheckpointEvaluationResponse,
+    EngineCheckpointSavedResponse,
 )
 
 
@@ -27,45 +27,59 @@ class EngineClient(ABC):
     """
 
         @abstractmethod
-    def start_training(
+    def start(
         self,
         request: StartEngineTrainingRequest,
     ) -> EngineTrainingStartedResponse:
         raise NotImplementedError
 
     @abstractmethod
-    def pause_training(
+    def pause(
         self,
         request: PauseEngineTrainingRequest,
     ) -> EngineStatusResponse:
         raise NotImplementedError
 
     @abstractmethod
-    def resume_training(
+    def resume(
         self,
         request: ResumeEngineTrainingRequest,
     ) -> EngineStatusResponse:
         raise NotImplementedError
 
     @abstractmethod
-    def stop_training(
+    def stop(
         self,
         request: StopEngineTrainingRequest,
     ) -> EngineStatusResponse:
         raise NotImplementedError
 
     @abstractmethod
-    def evaluate_checkpoint(
+    def save_checkpoint(
         self,
-        request: EvaluateCheckpointRequest,
-    ) -> EngineEvaluationResponse:
+        request: SaveEngineCheckpointRequest,
+    ) -> EngineCheckpointSavedResponse:
         raise NotImplementedError
 
     @abstractmethod
-    def save_checkpoint(
+    def load_checkpoint(
         self,
-        request: SaveCheckpointRequest,
-    ) -> EngineCheckpointResponse:
+        request : LocdEngineCheckpointRequest
+    ) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def delete_checkpoint(
+        self,
+        request : DeleteEngineCheckpointRequest,
+    ) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def evaluate_checkpoint(
+        self,
+        request : EvaluateEngineCheckpointRequest,
+    ) -> EngineCheckpointEvaluationResponse:
         raise NotImplementedError
 
     @abstractmethod

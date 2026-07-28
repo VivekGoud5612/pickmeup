@@ -9,7 +9,7 @@ class TrainingStatus(Enum):
     CREATED = auto()
     RUNNING = auto()
     PAUSED = auto()
-    COMPLETED = auto() 
+    STOPPED = auto() 
     FALED = auto()
 
 

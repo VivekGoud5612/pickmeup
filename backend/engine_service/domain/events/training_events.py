@@ -1,6 +1,6 @@
 from __future__ import annotations 
 
-from backend.engine_gateway.application.events.base import EngineEvent 
+from .base import EngineEvent 
 
 @dataclass(slots = True, frozen = True, kw_only = True)
 class TrainingInitializedEvent(EngineEvent):

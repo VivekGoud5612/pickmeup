@@ -25,6 +25,7 @@ class TrainingConfiguration:
     family_id : UUID   ## Crated in applicaiton layer .. . . . . . .
 
     is_training : bool 
+    
     version: int = 1
 
     name: str

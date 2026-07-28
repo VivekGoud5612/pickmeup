@@ -12,6 +12,10 @@ from training_service.application.repositories.checkpoint_repository import (
 from training_service.application.mappers.checkpoint_mapper import (
     CheckpointMapper,
 )
+from engine_gateway.infrastructure.engine_registry import (
+    EngineRegistry,
+)
+
 
 
 class DeleteCheckpointUseCase:

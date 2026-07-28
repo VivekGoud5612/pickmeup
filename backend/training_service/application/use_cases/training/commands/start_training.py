@@ -1,4 +1,5 @@
 from  __future__ import annotations
+from uuid import uuid4
 
 from training_service.application.dto.training.requests import (
     StartTrainingRequest,
@@ -26,16 +27,27 @@ from training_service.application.mappers.training_mapper import (
     TrainingMapper,
 )
 
+from engine_gateway.infrastructure.engine_registry import (
+    EngineRegistry,
+)
+
+from engine_gateway.infrastructure.publishers.local_engine_event_publisher import (
+    LocalEngineEventPublisher,
+)
 
 class StartTrainingUseCase:
 
     def __init__(
         self,
-        _training_repo : TrainingRunRepository,
-        _training_config_repo : TrainingConfigurationRepository,
+        training_repo : TrainingRunRepository,
+        training_config_repo : TrainingConfigurationRepository,
+        engine_registry : EngineRegistry,
     ) -> None:
-        self._training_repo = _training_repo 
-        self._training_config_repo = _training_config_repo
+
+        self._training_repo = training_repo 
+        self._training_config_repo = training_config_repo
+        self._engine_registry = engine_registry
+        self._publisher = LocalEngineEventPublisher()
 
 
     def execute(
@@ -53,7 +65,22 @@ class StartTrainingUseCase:
 
         self._training_config_repo.save(configuration)
 
-        training_run = self._create_training_run(request)
+        engine_request = InitializeEngineTrainingRequest(   ## Populate engine config..
+            configuration = request.configuration
+            run_name = request.run_name,
+        )
+
+        training_run_id = uuid4()
+
+        self._engine_client = self._engine_registry.create(
+            training_run_id = training_run_id,
+            request = engine_request,
+            publisher = self._publisher,
+        )
+
+        engine_start_response = self._engine_client.start()
+
+        training_run = self._create_training_run(request, configuration, engine_start_response, training_run_id)
         training_run.start()  ## Start the training and we reutrn the response DTO after saving...
 
         self._training_repo.save(training_run)
@@ -82,6 +109,7 @@ class StartTrainingUseCase:
 
             checkpoint_save_interval = request.hyperparameters.checkpoint_save_interval,
         )
+    
     
     def _create_reward_weights(self, request : StartTrainingRequest) -> RewardWeights:
 
@@ -138,7 +166,7 @@ class StartTrainingUseCase:
         )
 
     
-    def _create_training_run(self, request : StartTrainingRequest, configuration : TrainingConfiguration) -> TrainingRun:
+    def _create_training_run(self, request : StartTrainingRequest, configuration : TrainingConfiguration, engine_start_response : EngineTrainingStartedResponse, training_run_id : UUID) -> TrainingRun:
         """
         Create a training run and return that, writing this string 
         just for the sake of writing it...
@@ -146,25 +174,14 @@ class StartTrainingUseCase:
 
         return TrainingRun(
 
+            id = training_run_id,   ### The field method is still there, which creates a UUID at the time of creation, but we are overriding that so its fine...
             name=request.name,
             algorithm=request.algorithm,   ## This is just the creation of the training run.. when we run this then we can intitialize progress...
+            status = engine_start_response.status,
             progress = TrainingProgress(
                 episode = 0,
                 step = 0,
             )
             configuration_id=configuration.id,
-        )
-
-    
-    def _create_response_dto(self, training_run : TrainingRun) -> TrainingCreatedResponse:
-        
-        summary = TrainingSummaryResponse(
-            id = training_run.id,
-            name = training_run.name,
-            status = training_run.status,
-            progress = training_run.progress,
-            created_at = training_run.created_at,
-        )
-        return TrainingCreatedResponse(
-            run_summary = summary,
+            ## latest_checkpoint_id mostly comes from the checkpoint handler , when the checkpoint gets created and an event gets published..
         )

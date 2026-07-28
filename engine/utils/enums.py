@@ -1,4 +1,4 @@
-from enum import IntEnum 
+from enum import IntEnum, Enum, auto 
 
 class AgentID(IntEnum):
     TANK = 0
@@ -62,3 +62,12 @@ class ActionTypes(IntEnum):  ## Now there is no need for action map or reverse a
     BASIC = 5
     UTILITY = 6
     ULTIMATE = 7
+
+
+class EngineStatus(Enum):
+    INITIALIZED = auto()
+    CREATED = auto()
+    RUNNING = auto()
+    PAUSED = auto()
+    STOPPED = auto()
+    FAILED = auto()

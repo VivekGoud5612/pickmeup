@@ -53,9 +53,9 @@ class ResumeTrainingRequest:
     training_run_id : UUID 
 
 @dataclass(slots = True, frozen = True, kw_only = True)
-class CompleteTrainingRequest:
+class StopTrainingRequest:
     """
-    Request to complete training
+    Request to stop training
     """
     training_run_id : UUID 
 
