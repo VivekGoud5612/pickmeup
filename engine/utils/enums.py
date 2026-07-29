@@ -1,6 +1,5 @@
-from enum import IntEnum 
+from enum import IntEnum, Enum, auto 
 
-#Need to remove this afterwards
 class AgentID(IntEnum):
     TANK = 0
     DEALER = 1
@@ -38,11 +37,11 @@ class SkillTypes(IntEnum):
     ALL_HEAL = 6
     PIERCE = 3
 
-# class AgentID(IntEnum):
-#     TANK = 0
-#     DEALER = 1
-#     HEALER = 2
-#     BOSS = 3
+class AgentID(IntEnum):
+    TANK = 0
+    DEALER = 1
+    HEALER = 2
+    BOSS = 3
 
 class ElementTypes(IntEnum):
 
@@ -63,3 +62,12 @@ class ActionTypes(IntEnum):  ## Now there is no need for action map or reverse a
     BASIC = 5
     UTILITY = 6
     ULTIMATE = 7
+
+
+class EngineStatus(Enum):
+    INITIALIZED = auto()
+    CREATED = auto()
+    RUNNING = auto()
+    PAUSED = auto()
+    STOPPED = auto()
+    FAILED = auto()
