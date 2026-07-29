@@ -1,10 +1,13 @@
+import os
+# Force PyTorch to allocate memory dynamically in WSL to prevent crashes
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
 import torch 
 import time 
 import sys 
 import torch 
 from torch.utils.tensorboard import SummaryWriter 
 import numpy as np 
-import os
 from collections import deque ## So that we can append fast.. We use this to track both episode rewardsand heroes win rate...
 import traceback
 
@@ -25,7 +28,7 @@ def main():
     NUM_ENVS = 8
     NUM_STEPS = 200 
     NUM_AGENTS = 4
-    TOTAL_TIMESTEPS = 100000 ## For now 5000 steps.. let this run perfectly.. lets go to 5000000 - 5 mil.. model saves exactly 16 times..
+    TOTAL_TIMESTEPS = 5000000 ## For now 5000 steps.. let this run perfectly.. lets go to 5000000 - 5 mil.. model saves exactly 16 times..
     BATCH_SIZE = 1024  ## Let this be ...
     PPO_EPOCHS = 4
     INTENT_SIZE = 24
@@ -152,7 +155,7 @@ def main():
                             rolling_draw_rate.append(env_info['draw_rate'])
 
                         
-                        if episode_number > 0 and episode_number % 10 == 0:
+                        if episode_number > 0 and episode_number % 1000 == 0:
                             # Figure out the winner based on the flags
                             if env_info.get('hero_win_rate', 0.0) == 1.0:
                                 winner = "Heroes"
@@ -358,7 +361,18 @@ def main():
                     
                     }, milestone_path)
 
-                    rolling_win_rate.clear()  ## Clear the rolling win rate so that we can stack that up again...
+                    rolling_hero_win_rate.clear()  ## Clear the rolling win rate so that we can stack that up again...
+                    rolling_returns.clear()
+                    rolling_hero_win_rate.clear()
+                    rolling_boss_win_rate.clear()
+                    rolling_draw_rate.clear()
+                    rolling_boss_hp.clear()
+                    rolling_episode_length.clear()
+                    rolling_damage_dealt.clear()
+                    rolling_damage_blocked.clear()
+                    rolling_effectve_heal.clear()
+                    rolling_utility_uses.clear()
+                    rolling_ultimate_uses.clear()
 
                     print(f"[*]Broadcasting Curriculum Level {CURRICULUM_LEVEL} to workers...")
                     current_obs_dict, current_info = vector_env.reset(curriculum_level = CURRICULUM_LEVEL)  ## We reset the env here with our new level and update those current obs andsuch with the new information

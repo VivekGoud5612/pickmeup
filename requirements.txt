@@ -1,5 +1,0 @@
-torch torchvision torchaudio \
-  gymnasium \
-  redis \
-  numpy pandas matplotlib \
-  fastapi uvicorn

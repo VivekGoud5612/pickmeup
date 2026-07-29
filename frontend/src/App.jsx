@@ -1,397 +1,314 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
-export default function App() {
-  const canvasRef = useRef(null);
-  const wsRef = useRef(null); 
-  const logsEndRef = useRef(null);
-  
-  // Base State
-  const [hudStats, setHudStats] = useState(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [logs, setLogs] = useState([]);
-  
-  // Episode & Evaluation State
-  const [episodeNum, setEpisodeNum] = useState(1);
-  const [stepNum, setStepNum] = useState(0);
-  const [currentReward, setCurrentReward] = useState(0);
-  const [speed, setSpeed] = useState(2); // 0.5, 1, 2, 5 FPS
-  
-  // Eval Mode State
-  const [isEvalMode, setIsEvalMode] = useState(false);
-  const [gamesRemaining, setGamesRemaining] = useState(0);
+// ==========================================
+// 1. CONFIGURATION & API SERVICES
+// ==========================================
+const API_BASE_URL = 'http://localhost:8000/api';
+const WS_URL = 'ws://localhost:3001';
 
-  // Running Statistics
-  const [stats, setStats] = useState({
-    gamesPlayed: 0,
-    heroesWins: 0,
-    bossWins: 0,
-    totalReturn: 0,
-    totalSteps: 0
-  });
+const apiService = {
+  sendCommand: async (endpoint) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+      return await response.json();
+    } catch (error) {
+      console.error(`Error sending command to /${endpoint}:`, error);
+      throw error;
+    }
+  },
+  start: () => apiService.sendCommand('start'),
+  stop: () => apiService.sendCommand('stop'),
+  reset: () => apiService.sendCommand('reset'),
+};
 
-  // Keep a ref of previous states to track action changes for the terminal
-  const prevActionsRef = useRef({});
-
-  // --- LOGGING SYSTEM ---
-  const addLog = (message, type = 'info') => {
-    setLogs((prev) => {
-      const newLogs = [...prev, { time: new Date().toLocaleTimeString('en-US', { hour12: false, hour: "numeric", minute: "numeric", second: "numeric" }), message, type }];
-      return newLogs.slice(-100); 
-    });
-  };
+// ==========================================
+// 2. CUSTOM HOOKS
+// ==========================================
+const useWebSocket = (url) => {
+  const [gameState, setGameState] = useState(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const socketRef = useRef(null);
+  const reconnectTimeoutRef = useRef(null);
 
   useEffect(() => {
-    if (logsEndRef.current) logsEndRef.current.scrollIntoView({ behavior: "smooth" });
-  }, [logs]);
+    let isMounted = true;
 
-  // --- WEBSOCKET ENGINE ---
-  useEffect(() => {
-    wsRef.current = new WebSocket('ws://127.0.0.1:8000/ws/combat');
+    const connect = () => {
+      if (socketRef.current?.readyState === WebSocket.OPEN) return;
 
-    wsRef.current.onopen = () => {
-      addLog("System Online: Connected to Backend Engine", "success");
+      const socket = new WebSocket(url);
+      socketRef.current = socket;
+
+      socket.onopen = () => {
+        if (!isMounted) return;
+        setIsConnected(true);
+      };
+
+      socket.onmessage = (event) => {
+        if (!isMounted) return;
+        try {
+          const payload = JSON.parse(event.data);
+          setGameState(payload);
+        } catch (err) {
+          console.error('Failed to parse WS message:', err);
+        }
+      };
+
+      socket.onclose = () => {
+        if (!isMounted) return;
+        setIsConnected(false);
+        // Auto-reconnect every 3 seconds if the Node.js server goes down
+        reconnectTimeoutRef.current = setTimeout(connect, 3000); 
+      };
+
+      socket.onerror = (error) => {
+        console.error('WebSocket Error:', error);
+        socket.close();
+      };
     };
 
-    wsRef.current.onclose = () => {
-      addLog("System Offline: Connection closed", "error");
-      setIsPlaying(false);
-    };
-
-    wsRef.current.onmessage = (event) => {
-      const payload = JSON.parse(event.data);
-      
-      setHudStats(payload.agents);
-      setStepNum(payload.step);
-      if (payload.episode_reward !== undefined) setCurrentReward(payload.episode_reward.toFixed(2));
-
-      // Terminal Action Logging
-      if (payload.agents) {
-        Object.entries(payload.agents).forEach(([name, data]) => {
-          if (data.action && data.action !== prevActionsRef.current[name]) {
-            addLog(`${name} -> ${data.action}`, "action");
-            prevActionsRef.current[name] = data.action;
-          }
-        });
-      }
-
-      // Handle Episode End
-      if (payload.done) {
-        const winner = payload.winner || "UNKNOWN";
-        const finalReturn = payload.final_return || 0;
-        
-        addLog(`Episode ${episodeNum} Finished`, "system");
-        addLog(`Winner: ${winner} | Return: ${finalReturn.toFixed(2)}`, winner === "HEROES" ? "success" : "error");
-
-        // Update Running Stats
-        setStats(prev => ({
-          gamesPlayed: prev.gamesPlayed + 1,
-          heroesWins: prev.heroesWins + (winner === "HEROES" ? 1 : 0),
-          bossWins: prev.bossWins + (winner === "BOSS" ? 1 : 0),
-          totalReturn: prev.totalReturn + finalReturn,
-          totalSteps: prev.totalSteps + payload.step
-        }));
-
-        setEpisodeNum(prev => prev + 1);
-
-        // Handle 10-Game Mode Logic
-        setGamesRemaining(prev => {
-          if (prev > 1) {
-            addLog(`Eval Mode: Starting Game ${episodeNum + 1}...`, "info");
-            return prev - 1;
-          } else if (prev === 1) {
-            // Eval Mode Finished
-            setIsPlaying(false);
-            setIsEvalMode(false);
-            wsRef.current.send(JSON.stringify({ command: 'stop' }));
-            addLog(`[EVALUATION COMPLETE]`, "system");
-            return 0;
-          }
-          return 0; // Not in eval mode
-        });
-      }
-    };
+    connect();
 
     return () => {
-      if (wsRef.current) wsRef.current.close();
+      isMounted = false;
+      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+      if (socketRef.current) socketRef.current.close();
     };
-  }, [episodeNum]); // episodeNum dependency helps track game counts
+  }, [url]);
 
-  // --- CANVAS RENDERER ---
-  useEffect(() => {
-    if (!hudStats || !canvasRef.current) return;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    
-    // Grid Constants
-    const CELL_SIZE = 20;
-    const GRID_SIZE = 20;
+  return { gameState, isConnected };
+};
 
-    // Clear Arena
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+// ==========================================
+// 3. UI COMPONENTS
+// ==========================================
 
-    // 1. Draw Grid Coordinates & Lines
-    ctx.strokeStyle = '#1E2532';
-    ctx.lineWidth = 1;
-    ctx.fillStyle = '#475569';
-    ctx.font = '8px monospace';
-    
-    for (let i = 0; i <= GRID_SIZE; i++) {
-        ctx.beginPath(); ctx.moveTo(i * CELL_SIZE, 0); ctx.lineTo(i * CELL_SIZE, 400); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(0, i * CELL_SIZE); ctx.lineTo(400, i * CELL_SIZE); ctx.stroke();
-        // Light coordinates on edge
-        if (i < GRID_SIZE) {
-          ctx.fillText(i, i * CELL_SIZE + 2, 8);
-          if (i > 0) ctx.fillText(i, 2, i * CELL_SIZE + 8);
-        }
-    }
+const ControlPanel = ({ isConnected }) => {
+  const [loading, setLoading] = useState(null);
 
-    // 2. Draw Agents
-    Object.entries(hudStats).forEach(([agentName, data]) => {
-      const isDead = data.hp <= 0;
-      ctx.globalAlpha = isDead ? 0.2 : 1.0; // Dead opacity
-      
-      const px = data.x * CELL_SIZE;
-      const py = data.y * CELL_SIZE;
-      const isBoss = agentName === "BOSS";
-
-      // Sprite Sizing (Boss is 1.5x larger)
-      const spriteSize = isBoss ? CELL_SIZE * 1.5 : CELL_SIZE;
-      const offset = isBoss ? -(CELL_SIZE * 0.25) : 0; 
-      const drawX = px + offset;
-      const drawY = py + offset;
-
-      // Draw Block
-      ctx.fillStyle = isBoss ? '#F2685B' : '#4FE8C4';
-      ctx.fillRect(drawX, drawY, spriteSize, spriteSize);
-
-      // Draw Initials
-      ctx.fillStyle = '#0A0E17';
-      ctx.font = `bold ${isBoss ? 14 : 10}px monospace`;
-      ctx.fillText(agentName.substring(0, 1), drawX + (isBoss ? 8 : 6), drawY + (isBoss ? 20 : 14));
-
-      if (!isDead) {
-        // Draw Action Text above head
-        ctx.fillStyle = '#94A3B8';
-        ctx.font = '8px monospace';
-        ctx.fillText(data.action || '', drawX, drawY - 10);
-
-        // HP Bar
-        const maxHp = data.max_hp || (isBoss ? 200 : 100); 
-        const hpPercent = Math.max(0, data.hp / maxHp);
-        ctx.fillStyle = '#ef4444';
-        ctx.fillRect(drawX, drawY - 6, spriteSize * hpPercent, 3); 
-
-        // Stamina Bar
-        if (data.stamina !== undefined) {
-            const maxStam = data.max_stamina || 50;
-            const staminaPercent = Math.max(0, data.stamina / maxStam);
-            ctx.fillStyle = '#facc15';
-            ctx.fillRect(drawX, drawY - 2, spriteSize * staminaPercent, 2); 
-        }
-      }
-      ctx.globalAlpha = 1.0; // Reset alpha
-    });
-
-  }, [hudStats]);
-
-  // --- CONTROLS ---
-  const handleStart = () => {
-    setIsPlaying(true);
-    addLog(`Command: START [${speed} FPS]`, "system");
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ command: 'start', speed }));
-    }
-  };
-
-  const handleStop = () => {
-    setIsPlaying(false);
-    setIsEvalMode(false);
-    setGamesRemaining(0);
-    addLog("Command: STOP", "system");
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ command: 'stop' }));
-    }
-  };
-
-  const handleEvalMode = () => {
-    setIsPlaying(true);
-    setIsEvalMode(true);
-    setGamesRemaining(10);
-    addLog(`Command: 10-GAME EVALUATION STARTED`, "system");
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ command: 'start', speed }));
-    }
-  };
-
-  const changeSpeed = (newSpeed) => {
-    setSpeed(newSpeed);
-    if (isPlaying && wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ command: 'speed', speed: newSpeed }));
+  const handleAction = async (actionFn, actionName) => {
+    setLoading(actionName);
+    try {
+      await actionFn();
+    } catch (err) {
+      alert(`Failed to execute ${actionName}. Is FastAPI running on port 8000?`);
+    } finally {
+      setLoading(null);
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#0A0E17] text-slate-300 font-sans p-4 flex flex-col h-screen overflow-hidden">
-      
-      {/* TOP BAR: Controls & Running Stats */}
-      <div className="flex justify-between items-start mb-4 border-b border-slate-800 pb-4 shrink-0">
-        
-        {/* Left: Branding & Core Controls */}
-        <div className="flex gap-6 items-center">
-            <div>
-              <h1 className="text-2xl font-black text-[#4FE8C4] tracking-widest drop-shadow-[0_0_8px_rgba(79,232,196,0.3)]">
-                PICKMEUP <span className="text-slate-600 font-normal">| EVAL</span>
-              </h1>
-              <p className="text-slate-500 font-mono text-[10px] uppercase mt-1">MAPPO Checkpoint: 4.8M Steps</p>
-            </div>
-            
-            <div className="flex bg-[#12161D] rounded-lg border border-slate-800 p-1 gap-1">
-              <button onClick={handleStart} disabled={isPlaying} className={`px-4 py-1.5 rounded font-bold font-mono text-xs ${isPlaying ? 'text-slate-600' : 'bg-[#4FE8C4]/10 text-[#4FE8C4] hover:bg-[#4FE8C4]/20'}`}>START</button>
-              <button onClick={handleStop} disabled={!isPlaying} className={`px-4 py-1.5 rounded font-bold font-mono text-xs ${!isPlaying ? 'text-slate-600' : 'bg-red-500/10 text-red-500 hover:bg-red-500/20'}`}>STOP</button>
-              <div className="w-px bg-slate-800 mx-1"></div>
-              <button onClick={handleEvalMode} disabled={isPlaying} className={`px-4 py-1.5 rounded font-bold font-mono text-xs ${isPlaying ? 'text-slate-600' : 'bg-purple-500/10 text-purple-400 hover:bg-purple-500/20'}`}>10 GAMES</button>
-            </div>
+    <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4 shadow-lg">
+      <div className="flex items-center space-x-3">
+        <span className={`h-3 w-3 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+        <span className="text-sm font-medium text-slate-300">
+          WS Gateway: {isConnected ? 'Connected' : 'Disconnected'}
+        </span>
+      </div>
+      <div className="flex items-center gap-3">
+        <button
+          onClick={() => handleAction(apiService.start, 'Start')}
+          disabled={loading !== null}
+          className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 text-white font-semibold rounded-lg transition active:scale-95"
+        >
+          {loading === 'Start' ? '...' : 'Start'}
+        </button>
+        <button
+          onClick={() => handleAction(apiService.stop, 'Pause')}
+          disabled={loading !== null}
+          className="px-5 py-2 bg-amber-600 hover:bg-amber-500 disabled:bg-slate-700 text-white font-semibold rounded-lg transition active:scale-95"
+        >
+          {loading === 'Pause' ? '...' : 'Pause'}
+        </button>
+        <button
+          onClick={() => handleAction(apiService.reset, 'Reset')}
+          disabled={loading !== null}
+          className="px-5 py-2 bg-rose-600 hover:bg-rose-500 disabled:bg-slate-700 text-white font-semibold rounded-lg transition active:scale-95"
+        >
+          {loading === 'Reset' ? '...' : 'Reset'}
+        </button>
+      </div>
+    </div>
+  );
+};
 
-            {/* Speed Selector */}
-            <div className="flex items-center gap-2 bg-[#12161D] rounded-lg border border-slate-800 px-3 py-1.5">
-              <span className="text-slate-500 font-mono text-xs">SPEED:</span>
-              {[0.5, 1, 2, 5].map(s => (
-                <button key={s} onClick={() => changeSpeed(s)} className={`px-2 py-0.5 rounded font-mono text-xs ${speed === s ? 'bg-blue-500/20 text-blue-400' : 'text-slate-600 hover:text-slate-400'}`}>
-                  {s}x
-                </button>
-              ))}
+const GameGrid = ({ agents = {} }) => {
+  const GRID_SIZE = 20;
+  
+  // Adjusted styles to match your agent names exactly as they might come from AgentID enum
+  const AGENT_STYLES = {
+    Tank: 'bg-blue-500 text-white border-blue-300',
+    Dealer: 'bg-emerald-500 text-white border-emerald-300',
+    Healer: 'bg-yellow-400 text-slate-900 border-yellow-200',
+    Boss: 'bg-red-600 text-white border-red-400',
+    // Uppercase fallbacks
+    TANK: 'bg-blue-500 text-white border-blue-300',
+    DEALER: 'bg-emerald-500 text-white border-emerald-300',
+    HEALER: 'bg-yellow-400 text-slate-900 border-yellow-200',
+    BOSS: 'bg-red-600 text-white border-red-400',
+  };
+
+  const agentPositions = {};
+  if (agents && typeof agents === 'object') {
+    Object.entries(agents).forEach(([role, data]) => {
+      if (data && data.x != null && data.y != null) {
+        const key = `${data.x},${data.y}`;
+        if (!agentPositions[key]) agentPositions[key] = [];
+        agentPositions[key].push({ role, ...data });
+      }
+    });
+  }
+
+  const cells = [];
+  for (let y = 0; y < GRID_SIZE; y++) {
+    for (let x = 0; x < GRID_SIZE; x++) {
+      const occupants = agentPositions[`${x},${y}`] || [];
+      cells.push(
+        <div key={`${x}-${y}`} className="bg-slate-900/60 border border-slate-800/80 aspect-square flex items-center justify-center rounded-sm">
+          {occupants.map((agent) => (
+            <div
+              key={agent.role}
+              className={`w-4/5 h-4/5 rounded flex items-center justify-center font-extrabold text-[10px] shadow-md border ${AGENT_STYLES[agent.role] || 'bg-gray-500'}`}
+              title={`${agent.role} HP: ${agent.hp}`}
+            >
+              {agent.role.charAt(0).toUpperCase()}
             </div>
+          ))}
         </div>
+      );
+    }
+  }
 
-        {/* Right: Running Statistics */}
-        <div className="flex gap-4">
-          <StatBox label="GAMES" value={stats.gamesPlayed} />
-          <StatBox label="HERO WINS" value={stats.heroesWins} color="text-[#4FE8C4]" />
-          <StatBox label="BOSS WINS" value={stats.bossWins} color="text-[#F2685B]" />
-          <StatBox label="AVG REWARD" value={stats.gamesPlayed ? (stats.totalReturn / stats.gamesPlayed).toFixed(2) : '0.00'} />
-          <StatBox label="AVG LENGTH" value={stats.gamesPlayed ? Math.floor(stats.totalSteps / stats.gamesPlayed) : '0'} />
+  return (
+    <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-xl flex flex-col items-center">
+      {/* Explicit Grid Style Fix: Prevents 400 vertical rows */}
+      <div 
+        className="w-full max-w-[500px] aspect-square gap-[1px] bg-slate-950 p-1 rounded-lg"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`,
+          gridTemplateRows: `repeat(${GRID_SIZE}, minmax(0, 1fr))`
+        }}
+      >
+        {cells}
+      </div>
+      <div className="flex flex-wrap justify-center gap-4 mt-4 text-xs font-semibold text-slate-300">
+        <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-blue-500" /> Tank</div>
+        <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-emerald-500" /> Dealer</div>
+        <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-yellow-400" /> Healer</div>
+        <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-red-600" /> Boss</div>
+      </div>
+    </div>
+  );
+};
+
+const HUD = ({ step = 0, agents = {} }) => {
+  return (
+    <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 shadow-xl flex flex-col gap-5">
+      <div className="flex justify-between items-center border-b border-slate-700 pb-3">
+        <h2 className="text-lg font-bold text-slate-100 uppercase">Simulation State</h2>
+        <div className="bg-slate-900 border border-slate-700 px-4 py-1.5 rounded-lg">
+          <span className="text-xs text-slate-400 uppercase font-semibold mr-2">Step</span>
+          <span className="text-xl font-mono font-bold text-indigo-400">{step}/200</span>
         </div>
       </div>
 
-      {/* MAIN LAYOUT: 3 Columns */}
-      <div className="flex flex-1 gap-6 min-h-0">
-        
-        {/* LEFT PANEL: Episode Info */}
-        <div className="w-64 bg-[#0D111A] border border-[#1E2532] rounded-xl p-5 flex flex-col gap-6 shadow-lg shrink-0">
-           <div>
-             <h3 className="text-slate-500 font-mono text-xs tracking-widest border-b border-slate-800 pb-2 mb-4">EPISODE STATUS</h3>
-             <div className="text-4xl font-black text-white mb-1">#{episodeNum}</div>
-             <div className={`text-xs font-mono font-bold px-2 py-1 inline-block rounded ${isPlaying ? 'bg-green-500/10 text-green-400' : 'bg-slate-800 text-slate-500'}`}>
-               {isPlaying ? (isEvalMode ? `EVAL RUNNING (${gamesRemaining} LEFT)` : 'RUNNING') : 'HALTED'}
-             </div>
-           </div>
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        {!agents || Object.keys(agents).length === 0 ? (
+          <p className="text-slate-500 text-sm col-span-2 text-center py-6">Awaiting simulation data...</p>
+        ) : (
+          Object.entries(agents).map(([role, stats]) => {
+            const hpPct = stats.max_hp ? Math.max(0, Math.min(100, (stats.hp / stats.max_hp) * 100)) : 0;
+            const stamPct = stats.max_stamina ? Math.max(0, Math.min(100, (stats.stamina / stats.max_stamina) * 100)) : 0;
 
-           <div className="space-y-4">
-             <InfoRow label="CURRENT STEP" value={stepNum} />
-             <InfoRow label="EPISODE REWARD" value={currentReward} color={currentReward > 0 ? 'text-green-400' : 'text-red-400'} />
-           </div>
-        </div>
-
-        {/* CENTER PANEL: Arena & Terminal */}
-        <div className="flex-1 flex flex-col gap-6 min-w-0">
-            {/* The Arena Canvas */}
-            <div className="flex-1 flex items-center justify-center bg-[#0D111A] border border-[#1E2532] rounded-xl relative shadow-inner overflow-hidden">
-              <canvas 
-                  ref={canvasRef} 
-                  width={400} 
-                  height={400} 
-                  className="bg-[#0A0E17] border border-slate-800 shadow-[0_0_30px_rgba(0,0,0,0.5)]"
-              />
-            </div>
-
-            {/* Bottom Terminal */}
-            <div className="h-48 bg-[#0D111A] border border-[#1E2532] rounded-xl p-3 flex flex-col shadow-inner shrink-0">
-                <h3 className="text-slate-500 font-mono text-[10px] tracking-widest border-b border-slate-800 pb-1 mb-2">RAW EVENT LOG</h3>
-                <div className="flex-1 overflow-y-auto font-mono text-xs space-y-1 custom-scrollbar pr-2">
-                    {logs.map((log, idx) => (
-                        <div key={idx} className="flex gap-3 items-start leading-relaxed">
-                            <span className="text-slate-600 shrink-0">[{log.time}]</span>
-                            <span className={`
-                                ${log.type === 'error' ? 'text-red-400' : ''}
-                                ${log.type === 'success' ? 'text-emerald-400 font-bold' : ''}
-                                ${log.type === 'system' ? 'text-blue-400 font-bold' : ''}
-                                ${log.type === 'action' ? 'text-slate-300' : ''}
-                                ${log.type === 'info' ? 'text-slate-500' : ''}
-                            `}>
-                                {log.message}
-                            </span>
-                        </div>
-                    ))}
-                    <div ref={logsEndRef} />
+            return (
+              <div key={role} className="bg-slate-900/80 border border-slate-700/80 rounded-lg p-4 flex flex-col gap-3">
+                <div className="flex justify-between items-center">
+                  <span className="px-2.5 py-0.5 rounded text-xs font-black tracking-wider border bg-slate-800 text-slate-200 border-slate-600 uppercase">
+                    {role}
+                  </span>
+                  <span className="text-xs font-mono text-slate-400">Pos: ({stats.x ?? '-'}, {stats.y ?? '-'})</span>
                 </div>
-            </div>
-        </div>
 
-        {/* RIGHT PANEL: Live Agent State */}
-        <div className="w-80 bg-[#0D111A] border border-[#1E2532] rounded-xl p-5 shadow-lg overflow-y-auto custom-scrollbar shrink-0">
-            <h3 className="text-slate-500 font-mono text-xs tracking-widest border-b border-slate-800 pb-2 mb-4 flex justify-between">
-              LIVE AGENT STATE
-              <span className={`w-2 h-2 rounded-full ${isPlaying ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></span>
-            </h3>
-            
-            {hudStats ? (
-                <div className="space-y-4">
-                    {Object.entries(hudStats).map(([name, data]) => (
-                        <div key={name} className={`bg-[#12161D] border p-3 rounded-lg ${data.hp <= 0 ? 'border-red-900/50 opacity-50' : 'border-slate-800'}`}>
-                            <div className="flex justify-between items-center mb-2">
-                                <span className={`font-black tracking-wider ${name === 'BOSS' ? 'text-[#F2685B]' : 'text-[#4FE8C4]'}`}>
-                                    {name} {data.hp <= 0 && '(DEAD)'}
-                                </span>
-                                <span className="text-[10px] font-mono text-slate-500 bg-slate-900 px-1.5 py-0.5 rounded">
-                                    [{data.x}, {data.y}]
-                                </span>
-                            </div>
-
-                            <div className="space-y-1.5 text-xs font-mono">
-                                <BarRow label="HP" value={data.hp} max={data.max_hp || (name==='BOSS'?200:100)} color="bg-red-500" />
-                                {name !== 'BOSS' && (
-                                  <BarRow label="STM" value={data.stamina} max={data.max_stamina || 50} color="bg-yellow-400" />
-                                )}
-                            </div>
-
-                            <div className="mt-2 pt-2 border-t border-slate-800/50 flex justify-between items-center bg-slate-900/50 px-2 py-1 rounded">
-                                <span className="text-slate-500 text-[10px] tracking-widest">ACT</span>
-                                <span className="text-[#4FE8C4] text-xs font-bold">{data.action || 'IDLE'}</span>
-                            </div>
-                        </div>
-                    ))}
+                <div>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="text-slate-400 font-medium">HP</span>
+                    <span className="font-mono text-slate-200">{Math.round(stats.hp)} / {Math.round(stats.max_hp)}</span>
+                  </div>
+                  <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                    <div className="bg-rose-500 h-full transition-all duration-300" style={{ width: `${hpPct}%` }} />
+                  </div>
                 </div>
-            ) : (
-                <div className="flex items-center justify-center h-full text-slate-500 font-mono text-sm animate-pulse">Waiting...</div>
-            )}
-        </div>
 
+                <div>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="text-slate-400 font-medium">Stamina</span>
+                    <span className="font-mono text-slate-200">{Math.round(stats.stamina)} / {Math.round(stats.max_stamina)}</span>
+                  </div>
+                  <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                    <div className="bg-sky-500 h-full transition-all duration-300" style={{ width: `${stamPct}%` }} />
+                  </div>
+                </div>
+
+                {stats.cooldowns && (
+                  <div className="mt-1 pt-2 border-t border-slate-800 grid grid-cols-3 gap-2 text-center">
+                    <div className="bg-slate-800/60 p-1 rounded">
+                      <div className="text-[10px] text-slate-400 uppercase">Basic</div>
+                      <div className="font-mono font-bold text-slate-200 text-xs">{Math.round(stats.cooldowns.basic)}s</div>
+                    </div>
+                    <div className="bg-slate-800/60 p-1 rounded">
+                      <div className="text-[10px] text-slate-400 uppercase">Utility</div>
+                      <div className="font-mono font-bold text-slate-200 text-xs">{Math.round(stats.cooldowns.utility)}s</div>
+                    </div>
+                    <div className="bg-slate-800/60 p-1 rounded">
+                      <div className="text-[10px] text-slate-400 uppercase">Ultimate</div>
+                      <div className="font-mono font-bold text-slate-200 text-xs">{Math.round(stats.cooldowns.ultimate)}s</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ==========================================
+// 4. MAIN APPLICATION COMPONENT
+// ==========================================
+export default function App() {
+  const { gameState, isConnected } = useWebSocket(WS_URL);
+
+  // Fallback extraction to handle direct json payloads
+  const state = gameState?.data || gameState?.payload || gameState?.state || gameState;
+  const step = state?.step ?? 0;
+  const agents = state?.agents ?? {};
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans p-4 md:p-8">
+      <div className="max-w-7xl mx-auto flex flex-col gap-6">
+        <header>
+          <h1 className="text-2xl font-black tracking-tight text-white">Simulation Dashboard</h1>
+          <p className="text-xs text-slate-400">REST (FastAPI) + WebSockets (Node.js Gateway)</p>
+        </header>
+
+        <ControlPanel isConnected={isConnected} />
+
+        <main className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          <section className="lg:col-span-5">
+            <GameGrid agents={agents} />
+          </section>
+          <section className="lg:col-span-7">
+            <HUD step={step} agents={agents} />
+          </section>
+        </main>
       </div>
     </div>
   );
 }
-
-// --- HELPER COMPONENTS ---
-const StatBox = ({ label, value, color = 'text-white' }) => (
-  <div className="bg-[#12161D] border border-slate-800 rounded px-4 py-2 flex flex-col items-center min-w-[80px]">
-    <span className="text-slate-500 font-mono text-[9px] tracking-widest mb-1">{label}</span>
-    <span className={`font-black text-lg ${color}`}>{value}</span>
-  </div>
-);
-
-const InfoRow = ({ label, value, color = 'text-white' }) => (
-  <div className="flex justify-between items-center font-mono border-b border-slate-800/50 pb-1">
-    <span className="text-slate-500 text-xs">{label}</span>
-    <span className={`text-sm font-bold ${color}`}>{value}</span>
-  </div>
-);
-
-const BarRow = ({ label, value, max, color }) => (
-  <div className="flex items-center gap-2">
-      <span className="text-slate-500 w-6">{label}</span>
-      <div className="flex-1 bg-slate-800 h-1.5 rounded-full overflow-hidden">
-          <div className={`${color} h-full transition-all duration-300`} style={{ width: `${Math.max(0, (value / max) * 100)}%` }} />
-      </div>
-      <span className="text-slate-300 w-6 text-right">{Math.floor(value)}</span>
-  </div>
-);

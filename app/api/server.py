@@ -5,7 +5,7 @@ import json
 import traceback
 
 
-inference = Inference(checkpoint_path = 'checkpoints/MAPPO_GridWorld_1782322074/step_4800000.pt')
+inference = Inference(checkpoint_path = 'checkpoints/MAPPO_GridWorld_1785261521/step_4800000.pt')
 router = APIRouter(prefix = '/api', tags = ['Control'])
 
 #Global State controllers

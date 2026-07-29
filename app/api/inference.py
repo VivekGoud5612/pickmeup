@@ -18,7 +18,7 @@ class Inference:
         print(f"[*]Booting Inference Engine on {self.device}")
 
         #Initialize the high speed Redis connection during boot
-        self.redis_client = redis.Redis(host = '127.0.0.1', port = 6379, db = 0)
+        self.redis_client = redis.Redis(host = "redis", port = 6379, db = 0)
         print("[*]Redis pub/sub transmitter initialized on port 6379")
 
         self.env = Env(grid_size = 20, max_steps = 200)  ## Here we just initialize a single env because this is not trainingand there is no need for those many envs, there isonly one env

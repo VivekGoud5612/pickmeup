@@ -3,16 +3,16 @@ const {createClient} = require('redis')
 
 //Configure the redis client
 const redisClient = createClient({
-    url : 'redis://127.0.0.1:6379/0'
+    url : 'redis://redis:6379/0'
 })
 
 redisClient.on('error', (err) => console.log('[!] Redis Client Error', err))
 
 //Configure the Websocket server
-//Port 300 is used fro this websocket connection, since out python is occupying port 8000
+//Port 300 is used for this websocket connection, since our python is occupying port 8000
 const wss = new WebSocket.Server({
     port : 3001,
-    host : '127.0.0.1'
+    host : '0.0.0.0'
 })
 
 //Main async and await,,when a user clicks and the node.js sends a connection request to redis, instead of waiting for a reply

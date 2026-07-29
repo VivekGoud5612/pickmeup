@@ -39,8 +39,8 @@ class MAgent:
 
         dists, values, intent = self.swarm.get_actions_and_values(t_obs, t_global_state, t_masks)
 
-        tank_dist, healer_dist, dealer_dist, boss_dist = dists  ## Shape (num_evns, ) 
-        tank_val, healer_val, dealer_val, boss_val = values
+        tank_dist, dealer_dist, healer_dist, boss_dist = dists  ## Shape (num_evns, ) 
+        tank_val, dealer_val, healer_val, boss_val = values
 
         if is_training:
             tank_action = tank_dist.sample()
@@ -61,9 +61,9 @@ class MAgent:
 
         # 4. RECOMBINE INTO (num_envs, 4) FOR MAIN.PY
         # torch.stack takes our 1D arrays and lines them up as columns!
-        actions = torch.stack([tank_action, healer_action, dealer_action, boss_action], dim=1) # Shape (num_envs, num_agents,).. but why dim = 1?? ALong the nd dimension we are saying to stack.. so along columns...
-        log_probs = torch.stack([tank_log_prob, healer_log_prob, dealer_log_prob, boss_log_prob], dim=1)
-        state_values = torch.stack([tank_val, healer_val, dealer_val, boss_val], dim=1)
+        actions = torch.stack([tank_action, dealer_action, healer_action, boss_action], dim=1) # Shape (num_envs, num_agents,).. but why dim = 1?? ALong the nd dimension we are saying to stack.. so along columns...
+        log_probs = torch.stack([tank_log_prob, dealer_log_prob, healer_log_prob, boss_log_prob], dim=1)
+        state_values = torch.stack([tank_val, dealer_val, healer_val, boss_val], dim=1)
 
         # ----------------------------------------------------
         # THE FIX: Expand the intent to cover all 4 agent slots
