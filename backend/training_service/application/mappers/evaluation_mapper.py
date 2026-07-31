@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from training_service.domain.entities.evaluation import (
+from backend.training_service.domain.entities.evaluation_result import (
     EvaluationResult,
 )
 
-from training_service.application.dto.evaluation.responses import (
+from backend.training_service.application.dto.evaluation.responses import (
     EvaluationSummaryResponse,
     EvaluationCreatedResponse,
     EvaluationDeletedResponse,
@@ -48,5 +48,5 @@ class EvaluationMapper:
     ) -> EvaluationDeletedResponse:
 
         return EvaluationDeletedResponse(
-            message=f"Checkpoint '{evaluation.id}' deleted successfully."
+            message=f"Evaluation '{evaluation.id}' deleted successfully."
         )

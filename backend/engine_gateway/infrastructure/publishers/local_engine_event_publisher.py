@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from backend.engine_gateway.application.contracts.engine_event_publisher import EngineEventPublisher 
 
-from engine_gateway.application.events.base import EngineEvent 
-from engine_gateway.application.handlers.base import EngineEventHandler
+from backend.engine_gateway.application.events.base import EngineEvent 
+from backend.engine_gateway.application.handlers.base import EngineEventHandler
 
 
 class LocalEngineEventPublisher(EngineEventPublisher):

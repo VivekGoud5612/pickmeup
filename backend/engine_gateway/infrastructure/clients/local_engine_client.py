@@ -5,18 +5,18 @@ from datetime import datetime, UTC
 from backend.training_service.domain.enums import CheckpointType
 
 from engine.training.training_engine import (
-    TrainingEngine,
+   TrainingEngine,
 )
 
-from engine_gateway.application.contracts.engine_client import (
+from backend.engine_gateway.application.contracts.engine_client import (
     EngineClient,
 )
 
-from engine_gateway.application.contracts.engine_event_publisher import (
+from backend.engine_gateway.application.contracts.engine_event_publisher import (
     EngineEventPublisher,
 )
 
-from training_service.application.dto.engine.requests import (
+from backend.engine_gateway.application.dto.engine.requests import (
     StartEngineTrainingRequest,
     PauseEngineTrainingRequest,
     ResumeEngineTrainingRequest,
@@ -24,9 +24,11 @@ from training_service.application.dto.engine.requests import (
     EvaluateEngineCheckpointRequest,
     SaveEngineCheckpointRequest,
     DeleteEngineCheckpointRequest,
+    InitializeEngineTrainingRequest,
+    LoadEngineCheckpointRequest,
 )
 
-from training_service.application.dto.engine.responses import (
+from backend.training_service.application.dto.engine.responses import (
     EngineTrainingStartedResponse,
     EngineStatusResponse,
     EngineMetricsResponse,
@@ -55,7 +57,7 @@ class LocalEngineClient(EngineClient):
         Also thought of publisher comes from backend, but no need .. and thought of defining the publisher
         in the constructor, but publisher is perisisted to the engine and not the client so to avoid duplication
         """
-        self._engine.initializate(
+        self._engine.initialize(
             config = request.configuration,
             run_name = request.run_name,
             publisher = publisher,
@@ -70,9 +72,9 @@ class LocalEngineClient(EngineClient):
         )
 
     def pause(self) -> EngineStatusResponse:
-    """
-    Pause the current training session.
-    """
+        """
+        Pause the current training session.
+        """
         self._engine.pause()
 
         return EngineStatusResponse(
@@ -81,9 +83,9 @@ class LocalEngineClient(EngineClient):
 
 
     def stop(self) -> EngineStatusResponse:
-    """
-    Stop training.
-    """
+        """
+        Stop training.
+        """
         self._engine.stop()
 
         return EngineStatusResponse(
@@ -92,9 +94,9 @@ class LocalEngineClient(EngineClient):
     
 
     def resume(self) -> EngineStatusResponse:
-    """
-    Resume a paused training session.
-    """
+        """
+        Resume a paused training session.
+        """
         self._engine.resume()
 
         return EngineStatusResponse(
@@ -103,12 +105,12 @@ class LocalEngineClient(EngineClient):
 
     
     def save_checkpoint(
-    self,
-    request: SaveEngineCheckpointRequest,
-    ) -> EngineCheckpointSavedResponse:
-    """
-    Save the current engine state.
-    """
+        self,
+        request: SaveEngineCheckpointRequest,
+        ) -> EngineCheckpointSavedResponse:
+        """
+        Save the current engine state.
+        """
 
         checkpoint_path = (
             self._engine.checkpoint_directory()/  ## A read only property which returns the same...
@@ -118,21 +120,21 @@ class LocalEngineClient(EngineClient):
 
         self._engine.save_checkpoint(checkpoint_path)
 
-        return EngineCheckpointResponse{
+        return EngineCheckpointSavedResponse(
             checkpoint_type = CheckpointType.MANUAL,
             checkpoint_path = checkpoint_path,   ## Is thesame response for periodic checkpoint as well, but need to make it so that each time it gets created, we get some signal from the engine to send to backend, that the checkpoint was created and 
             ## you need to update that an dsave that, and update training run to contain that as the latest checkpoint...
             created_at = datetime.now(UTC),
-        }
+        )
 
     
     def load_checkpoint(
-    self,
-    request: LoadEngineCheckpointRequest,
-    ) -> None:
-    """
-    Restore a previous checkpoint.
-    """
+        self,
+        request: LoadEngineCheckpointRequest,
+        ) -> None:
+        """
+        Restore a previous checkpoint.
+        """
 
         self._engine.load_checkpoint(
             request.path,
@@ -142,9 +144,20 @@ class LocalEngineClient(EngineClient):
     def delete_checkpoint(
         self, 
         request : DeleteEngineCheckpointRequest,
-    ) -> None:
+        ) -> None:
         
-        if request.checkpoint_path.exists():  ### Note that we get Path objects from DTOs, but are just simply strings favourible ?? 
+      ### Note that we get Path objects from DTOs, but are just simply strings favourible ?? 
+        if not request.checkpoint_path.exists():
+            raise FileNotFoundError(
+                f"Checkpoint '{request.checkpoint_path}' does not exist."
+            )
+
+        if not request.checkpoint_path.is_file():
+            raise ValueError(
+                f"'{request.checkpoint_path}' is not a checkpoint file."
+            )
+
+        request.checkpoint_path.unlink()
     
     def evaluate_checkpoint(self, request : EvaluateEngineCheckpointRequest) -> EngineCheckpointEvaluationResponse:
         """

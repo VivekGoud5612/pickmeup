@@ -1,19 +1,19 @@
 from __future__ import annotations 
 from uuid import UUID 
 
-from engine_gateway.application.engine_client import (
+from backend.engine_gateway.application.contracts.engine_client import (
     EngineClient,
 )
 
-from engine_gateway.infrastructure.clients.local_engine_client import (
+from backend.engine_gateway.infrastructure.clients.local_engine_client import (
     LocalEngineClient,
 )
 
-from engine_gateway.application.contracts.engine_event_publisher import (
+from backend.engine_gateway.application.contracts.engine_event_publisher import (
     EngineEventPublisher,
 )
 
-from training_service.application.dto.engine.requests import (
+from backend.training_service.application.dto.engine.requests import (
     InitializeEngineTrainingRequest,
 )
 

@@ -1,17 +1,17 @@
 from __future__ import annotations 
 
-from training_service.application.repositories.training_repository import (
+from backend.training_service.application.repositories.training_repository import (
     TrainingRunRepository,
 )
 
-from training_service.applicaiton.dto.training.requests import (
+from backend.training_service.applicaiton.dto.training.requests import (
     GetTrainingProgressRequest,
 )
 
-from training_service.applicaiton.dto.training.responses import (
+from backend.training_service.applicaiton.dto.training.responses import (
     TrainingProgressResponse,
 )
-from training_service.application.mappers.training_mapper import (
+from backend.training_service.application.mappers.training_mapper import (
     TrainingMapper,
 )
 

@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from training_service.application.dto.checkpoint.requests import (
+from backend.training_service.application.dto.checkpoint.requests import (
     GetLatestCheckpointRequest,
 )
-from training_service.application.dto.checkpoint.responses import (
+from backend.training_service.application.dto.checkpoint.responses import (
     CheckpointSummaryResponse,
 )
-from training_service.application.repositories.checkpoint_repository import (
+from backend.training_service.application.repositories.checkpoint_repository import (
     CheckpointRepository,
 )
-from training_service.application.mappers.checkpoint_mapper import (
+from backend.training_service.application.mappers.checkpoint_mapper import (
     CheckpointMapper,
 )
 

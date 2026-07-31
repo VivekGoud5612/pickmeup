@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from training_service.domain.entities.training_run import TrainingRun
+from backend.training_service.domain.entities.training_run import TrainingRun
 
-from training_service.application.dto.training.responses import (
+from backend.training_service.application.dto.training.responses import (
     TrainingSummaryResponse,
     TrainingCreatedResponse,
     TrainingProgressResponse,
@@ -23,43 +23,43 @@ class TrainingMapper:
     ) -> TrainingSummaryResponse:
 
         return TrainingSummaryResponse(
-                id=training.id,
-                name=training.name,
-                status=training.status,
-                progress=training.progress,
-                started_at=training.started_at,
-                finished_at=training.finished_at,
+                id=training_run.id,
+                name=training_run.name,
+                status=training_run.status,
+                progress=training_run.progress,
+                created_at=training_run.started_at,
+                finished_at=training_run.finished_at,
             )
 
-    
+        
     @staticmethod
     def to_created(
-        training: TrainingRun,
+        training_run: TrainingRun,
     ) -> TrainingCreatedResponse:
 
         return TrainingCreatedResponse(
-            run_summary=TrainingMapper.to_summary(training),
+            run_summary=TrainingMapper.to_summary(training_run),
         )
 
-    
+        
     @staticmethod
     def to_progress(
-        training: TrainingRun,
+        training_run: TrainingRun,
     ) -> TrainingProgressResponse:
 
         return TrainingProgressResponse(
-            id=training.id,
-            name=training.name,
-            status=training.status,
-            progress=training.progress,
+            id=training_run.id,
+            name=training_run.name,
+            status=training_run.status,
+            progress=training_run.progress,
         )
 
-    
+        
     @staticmethod
     def to_deleted(
-        training : TrainingRun,
+        training_run : TrainingRun,
     ) -> TrainingDeletedResponse:
 
         return TrainingDeletedResponse(
-            message=f"Checkpoint '{training.id}' deleted successfully."
+            message=f"Training '{training_run.id}' deleted successfully."
         )

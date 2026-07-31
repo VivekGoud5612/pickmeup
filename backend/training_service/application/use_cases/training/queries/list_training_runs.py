@@ -1,14 +1,18 @@
 from __future__ import annotations 
 
-from training_service.application.repositories.training_repository import (
+from backend.training_service.application.repositories.training_repository import (
     TrainingRunRepository,
 )
 
-from training_service.application.dto.training.requests import (
+from backend.training_service.application.dto.training.requests import (
     ListTrainingRunsRequest
 )
 
-from training_service.application.dto.training.responses import (
+from backend.training_service.application.mappers.training_mapper import (
+    TrainingMapper
+)
+
+from backend.training_service.application.dto.training.responses import (
     ListTrainingRunsResponse
 )
 
@@ -23,11 +27,11 @@ class ListTrainingRunsUseCase:
     def execute(
         self,
         request : ListTrainingRunsRequest,
-    ) -> ListTrainingRunsResponse
+    ) -> ListTrainingRunsResponse:
 
         training_runs = self._training_repo.list_all()
 
-        return ListCheckpointsResponse(
+        return ListTrainingRunsResponse(
             runs_summary = [
                 TrainingMapper.to_summary(run)
                 for run in training_runs

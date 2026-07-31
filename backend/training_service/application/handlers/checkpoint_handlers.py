@@ -1,7 +1,7 @@
 from __future__ import annotations 
 
-from training_service.application.handlers.base import EngineEventHandler 
-from engine_gateway.application.events.checkpoint_events import (
+from backend.training_service.application.handlers.base import EngineEventHandler 
+from backend.engine_gateway.application.events.checkpoint_events import (
     CheckpointCreatedEvent,
 )
 

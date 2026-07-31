@@ -1,7 +1,7 @@
 from __future__ import annotations 
 from abc import ABC, abstractmethod 
 
-from engine_gateway.application.events.base import EngineEvent 
+from backend.engine_gateway.application.events.base import EngineEvent 
 
 
 class EngineEventHandler(ABC):

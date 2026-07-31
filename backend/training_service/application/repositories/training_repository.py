@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from uuid import UUID
 
-from training_services.domain.entities.training_run import TrainingRun
+from backend.training_service.domain.entities.training_run import TrainingRun
 
 
 class TrainingRunRepository(ABC):

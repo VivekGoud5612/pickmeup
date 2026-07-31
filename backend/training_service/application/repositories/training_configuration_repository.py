@@ -3,10 +3,10 @@ Configuration gets its own repo
 """
 
 from __future__ import annotations 
-from abc import ABC 
+from abc import ABC , abstractmethod
 from uuid import UUID 
 
-from training_service.domain.entities.training_config import TrainingConfiguration
+from backend.training_service.domain.entities.training_config import TrainingConfiguration
 
 class TrainingConfigurationRepository(ABC):
 
@@ -43,10 +43,10 @@ class TrainingConfigurationRepository(ABC):
         raise NotImplementedError
 
     
-    @abstractmethod
-    def list_versions(self, config_name : str) -> list[TrainingConfiguration]:
-        raise NotImplementedError
+    # @abstractmethod
+    # def list_versions(self, config_name : str) -> list[TrainingConfiguration]:
+    #     raise NotImplementedError
 
-    @abstractmethod
-    def get_latest_version(self, config_name : str) -> TrainingConfiguration:
-        raise NotImplementedError
+    # @abstractmethod
+    # def get_latest_version(self, config_name : str) -> TrainingConfiguration:
+    #     raise NotImplementedError

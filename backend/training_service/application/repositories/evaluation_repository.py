@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from uuid import UUID
 
-from training_service.domain.entities.evaluation_result import (
+from backend.training_service.domain.entities.evaluation_result import (
     EvaluationResult,
 )
 

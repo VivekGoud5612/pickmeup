@@ -4,7 +4,7 @@ from uuid import UUID
 
 
 @dataclass(slots=True, kw_only=True)
-class PerformanceMetricsRequest:
+class PerformanceMetrics:
     """
     Snapshot of the current training performance.
 

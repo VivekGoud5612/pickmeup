@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from training_service.application.dto.evaluation.requests import (
+from backend.training_service.application.dto.evaluation.requests import (
     DeleteEvaluationRequest,
 )
-from training_service.application.dto.evaluation.responses import (
+from backend.training_service.application.dto.evaluation.responses import (
     EvaluationDeletedResponse,
 )
-from training_service.application.repositories.evaluation_repository import (
+from backend.training_service.application.repositories.evaluation_repository import (
     EvaluationRepository,
 )
-from training_service.application.mappers.evaluation_mapper import (
+from backend.training_service.application.mappers.evaluation_mapper import (
     EvaluationMapper,
 )
 
@@ -35,7 +35,7 @@ class DeleteEvaluationUseCase:
             request.evaluation_id
         )
 
-        self._evaluation_repo.delete(evaluation)
+        self._evaluation_repo.delete(request.evaluation_id)
 
         return EvaluationMapper.to_deleted(
             evaluation

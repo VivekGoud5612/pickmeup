@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from training_service.domain.entities.training_checkpoint import (
+from backend.training_service.domain.entities.checkpoint import (
     TrainingCheckpoint,
 )
 
-from training_service.application.dto.checkpoint.responses import (
+from backend.training_service.application.dto.checkpoint.responses import (
     CheckpointSummaryResponse,
     CheckpointCreatedResponse,
     CheckpointDeletedResponse,

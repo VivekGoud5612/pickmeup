@@ -11,8 +11,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID 
 
-from training_service.domain.enums import TrainingStatus 
-from training_service.domain.value_objects import TrainingProgress 
+from backend.training_service.domain.enums import TrainingStatus 
+from backend.training_service.domain.value_objects import TrainingProgress 
 
 
 @dataclass(slots = True, frozen = True, kw_only = True)
@@ -60,6 +60,6 @@ class ListTrainingRunsResponse:
 
 
 @dataclass(slots = True, frozen = True, kw_only = True)
-class TrainingdeletedResponse:
+class TrainingDeletedResponse:
 
     message : str = "Training deleted Successfully"

@@ -2,6 +2,10 @@ from __future__ import annotations
 from dataclasses import dataclass 
 from uuid import UUID 
 
+from datetime import datetime
+
+from backend.training_service.domain.enums import EvaluationStatus
+
 
 @dataclass(slots=True, frozen=True, kw_only=True)
 class EvaluationSummaryResponse:

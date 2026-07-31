@@ -11,8 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass 
 from uuid import UUID
 
-from training_service.domain.enums import TrainingAlgorithm, TrainingStatus
-from training_service.application.dto.training.nested_requests import HyperParameters, RewardWeights, CurriculumSettings
+from backend.training_service.domain.enums import TrainingAlgorithm, TrainingStatus
+from backend.training_service.application.dto.training.nested_requests import HyperParametersRequest, RewardWeightsRequest, CurriculumSettingsRequest
 
 @dataclass(slots = True, frozen = True, kw_only = True)  ## these are immutable objects 
 class StartTrainingRequest:

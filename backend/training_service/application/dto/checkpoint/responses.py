@@ -2,7 +2,9 @@ from __future__ import annotations
 from uuid import UUID 
 from dataclasses import dataclass 
 
-from training_service.domain.enums import EvaluationStatus
+from backend.training_service.domain.enums import EvaluationStatus
+from datetime import datetime
+from backend.training_service.domain.value_objects import TrainingProgress
 
 @dataclass(slots=True, frozen=True, kw_only=True)
 class CheckpointSummaryResponse:
@@ -14,6 +16,8 @@ class CheckpointSummaryResponse:
     progress : TrainingProgress 
 
     created_at: datetime    # No file system path, as we can get that any time with ID... And this should be DTO so no file paths 
+
+    is_best : bool
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)

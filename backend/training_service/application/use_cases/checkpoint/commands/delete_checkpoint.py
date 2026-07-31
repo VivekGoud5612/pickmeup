@@ -1,21 +1,17 @@
 from __future__ import annotations
 
-from training_service.application.dto.checkpoint.requests import (
+from backend.training_service.application.dto.checkpoint.requests import (
     DeleteCheckpointRequest,
 )
-from training_service.application.dto.checkpoint.responses import (
+from backend.training_service.application.dto.checkpoint.responses import (
     CheckpointDeletedResponse,
 )
-from training_service.application.repositories.checkpoint_repository import (
+from backend.training_service.application.repositories.checkpoint_repository import (
     CheckpointRepository,
 )
-from training_service.application.mappers.checkpoint_mapper import (
+from backend.training_service.application.mappers.checkpoint_mapper import (
     CheckpointMapper,
 )
-from engine_gateway.infrastructure.engine_registry import (
-    EngineRegistry,
-)
-
 
 
 class DeleteCheckpointUseCase:
@@ -36,6 +32,10 @@ class DeleteCheckpointUseCase:
             request.checkpoint_id
         )
 
-        self._checkpoint_repo.delete(checkpoint)
+        self._checkpoint_repo.delete(
+            checkpoint.id
+        )
 
-        return CheckpointMapper.to_deleted(checkpoint)
+        return CheckpointMapper.to_deleted(
+            checkpoint
+        )

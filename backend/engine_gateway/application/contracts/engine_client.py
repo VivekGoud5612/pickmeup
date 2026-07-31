@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod 
 
-from training_service.application.dto.engine.requests import (
+from backend.engine_gateway.application.dto.requests import (
     StartEngineTrainingRequest,
     PauseEngineTrainingRequest,
     ResumeEngineTrainingRequest,
@@ -11,7 +11,7 @@ from training_service.application.dto.engine.requests import (
     SaveEngineCheckpointRequest,
 )
 
-from training_service.application.dto.engine.responses import (
+from backend.engine_gateway.application.dto.responses import (
     EngineTrainingStartedResponse,
     EngineStatusResponse,
     EngineMetricsResponse,
@@ -26,7 +26,7 @@ class EngineClient(ABC):
     training backend and engine
     """
 
-        @abstractmethod
+    @abstractmethod
     def start(
         self,
         request: StartEngineTrainingRequest,

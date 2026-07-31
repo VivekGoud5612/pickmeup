@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from training_service.application.dto.training.requests import (
+from backend.training_service.application.dto.training.requests import (
     GetTrainingSummaryRequest,
 )
-from training_service.application.dto.training.responses import (
+from backend.training_service.application.dto.training.responses import (
     TrainingSummaryResponse,
 )
-from training_service.application.repositories.training_repository import (
+from backend.training_service.application.repositories.training_repository import (
     TrainingRunRepository,
 )
-from training_service.application.mappers.training_mapper import (
+from backend.training_service.application.mappers.training_mapper import (
     TrainingMapper,
 )
 
@@ -21,7 +21,7 @@ class GetTrainingSummaryUseCase:
 
     def __init__(self, training_repo : TrainingRunRepository) -> None:
 
-        self.training_repo = training_repo
+        self._training_repo = training_repo
 
     
     def execute(self, request : GetTrainingSummaryRequest) -> TrainingSummaryResponse:

@@ -1,10 +1,10 @@
 from __future__ import annotations 
 
-from engine_gateway.application.events.training_events import (
+from backend.engine_gateway.application.events.training_events import (
     TrainingInitializedEvent, TrainingStartedEvent, TrainingPausedEvent, TrainingResumedEvent, TrainingStoppedEvent, TrainingCompletedEvent, TrainingFailedEvent
 )
 
-from training_service.application.handlers.base import EngineEventHandler 
+from backend.training_service.application.handlers.base import EngineEventHandler 
 
 
 class TrainingInitializedHandler(EngineEventHandler):
