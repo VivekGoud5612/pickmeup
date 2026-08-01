@@ -34,8 +34,6 @@ class TrainingRunPersistenceMapper:
 
             status=training_run.status,
 
-            episode=training_run.progress.episode if training_run.progress else 0,
-
             step=training_run.progress.step if training_run.progress else 0,
 
             configuration_id=training_run.configuration_id,
@@ -67,7 +65,6 @@ class TrainingRunPersistenceMapper:
             status=model.status,
 
             progress=TrainingProgress(
-                episode=model.episode,
                 step=model.step,
             ),
 

@@ -12,17 +12,25 @@ from backend.training_service.application.repositories.training_repository impor
 from backend.training_service.application.mappers.training_mapper import (
     TrainingMapper,
 )
-from backend.engine_gateway.infrastructure.dummyengine_registry import (
-    DummyEngineRegistry,
+
+from backend.engine_gateway.infrastructure.engine_registry import (
+    EngineRegistry,
+)
+
+from backend.engine_gateway.application.dto.requests import (
+    StopEngineTrainingRequest,
 )
 
 
 class StopTrainingUseCase:
+    """
+    Stop a running training session.
+    """
 
     def __init__(
         self,
         training_repo: TrainingRunRepository,
-        engine_registry: DummyEngineRegistry,
+        engine_registry: EngineRegistry,
     ) -> None:
 
         self._training_repo = training_repo
@@ -41,14 +49,12 @@ class StopTrainingUseCase:
             request.training_run_id,
         )
 
-        if engine_client is not None:
-            engine_client.stop()
-
-        training_run.stop()
-
-        self._training_repo.update(
-            training_run,
+        engine_client.stop(
+            StopEngineTrainingRequest(),
         )
+
+        # TrainingStoppedHandler updates the repository.
+        # After the engine has stopped, remove it from the registry.
 
         self._engine_registry.remove(
             request.training_run_id,

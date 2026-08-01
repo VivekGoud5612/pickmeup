@@ -12,17 +12,25 @@ from backend.training_service.application.repositories.training_repository impor
 from backend.training_service.application.mappers.training_mapper import (
     TrainingMapper,
 )
-from backend.engine_gateway.infrastructure.dummyengine_registry import (
-    DummyEngineRegistry,
+
+from backend.engine_gateway.infrastructure.engine_registry import (
+    EngineRegistry,
+)
+
+from backend.engine_gateway.application.dto.requests import (
+    ResumeEngineTrainingRequest,
 )
 
 
 class ResumeTrainingUseCase:
+    """
+    Resume a paused training session.
+    """
 
     def __init__(
         self,
         training_repo: TrainingRunRepository,
-        engine_registry: DummyEngineRegistry,
+        engine_registry: EngineRegistry,
     ) -> None:
 
         self._training_repo = training_repo
@@ -41,13 +49,11 @@ class ResumeTrainingUseCase:
             request.training_run_id,
         )
 
-        engine_client.resume()
-
-        training_run.resume()
-
-        self._training_repo.update(
-            training_run,
+        engine_client.resume(
+            ResumeEngineTrainingRequest(),
         )
+
+        # TrainingResumedHandler updates the repository.
 
         return TrainingMapper.to_summary(
             training_run,

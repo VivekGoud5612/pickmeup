@@ -15,19 +15,23 @@ from backend.training_service.infrastructure.repositories.sql_checkpoint_reposit
 from backend.training_service.infrastructure.repositories.sql_training_run_repository import (
     SQLTrainingRunRepository,
 )
+from backend.training_service.infrastructure.repositories.sql_training_configuration_repository import (
+    SQLTrainingConfigurationRepository,
+)
 from backend.training_service.infrastructure.repositories.sql_evaluation_repository import (
     SQLEvaluationRepository,
 )
 
-from backend.engine_gateway.infrastructure.dummyengine_registry import (
-    DummyEngineRegistry,
+from backend.engine_gateway.infrastructure.registry_instance import (
+    engine_registry,
 )
 
 from backend.training_service.application.dto.checkpoint.requests import (
     SaveCheckpointRequest,
     DeleteCheckpointRequest,
-    GetBestCheckpointRequest,
     GetCheckpointRequest,
+    GetLatestCheckpointRequest,
+    GetBestCheckpointRequest,
     ListCheckpointsRequest,
 )
 
@@ -35,14 +39,7 @@ from backend.training_service.application.dto.checkpoint.responses import (
     CheckpointCreatedResponse,
     CheckpointDeletedResponse,
     CheckpointSummaryResponse,
-)
-
-from backend.training_service.application.dto.evaluation.requests import (
-    StartEvaluationRequest,
-)
-
-from backend.training_service.application.dto.evaluation.responses import (
-    EvaluationCreatedResponse,
+    ListCheckpointsResponse,
 )
 
 from backend.training_service.application.use_cases.checkpoint.commands.save_checkpoint import (
@@ -52,18 +49,17 @@ from backend.training_service.application.use_cases.checkpoint.commands.delete_c
     DeleteCheckpointUseCase,
 )
 
-from backend.training_service.application.use_cases.checkpoint.queries.get_best_checkpoint import (
-    GetBestCheckpointUseCase,
-)
 from backend.training_service.application.use_cases.checkpoint.queries.get_checkpoint import (
     GetCheckpointUseCase,
 )
+from backend.training_service.application.use_cases.checkpoint.queries.get_latest_checkpoint import (
+    GetLatestCheckpointUseCase,
+)
+from backend.training_service.application.use_cases.checkpoint.queries.get_best_checkpoint import (
+    GetBestCheckpointUseCase,
+)
 from backend.training_service.application.use_cases.checkpoint.queries.list_checkpoints import (
     ListCheckpointsUseCase,
-)
-
-from backend.training_service.application.use_cases.evaluation.commands.start_evaluation import (
-    StartEvaluationUseCase,
 )
 
 router = APIRouter(
@@ -71,7 +67,6 @@ router = APIRouter(
     tags=["Checkpoint"],
 )
 
-engine_registry = DummyEngineRegistry()
 
 
 @router.post(
@@ -80,22 +75,28 @@ engine_registry = DummyEngineRegistry()
 )
 def save_checkpoint(
     training_run_id: UUID,
-    request: SaveCheckpointRequest,
+    body: SaveCheckpointRequest,
     session: Session = Depends(get_session),
 ):
 
     checkpoint_repo = SQLCheckpointRepository(session)
     training_repo = SQLTrainingRunRepository(session)
+    configuration_repo = SQLTrainingConfigurationRepository(session)
 
     usecase = SaveCheckpointUseCase(
         checkpoint_repo=checkpoint_repo,
         training_repo=training_repo,
+        training_config_repo=configuration_repo,
         engine_registry=engine_registry,
     )
 
-    request.training_run_id = training_run_id
-
-    return usecase.execute(request)
+    return usecase.execute(
+        SaveCheckpointRequest(
+            training_run_id=training_run_id,
+            checkpoint_name=body.checkpoint_name,
+            notes=body.notes,
+        )
+    )
 
 
 @router.delete(
@@ -108,16 +109,21 @@ def delete_checkpoint(
 ):
 
     checkpoint_repo = SQLCheckpointRepository(session)
+    training_repo = SQLTrainingRunRepository(session)
+    evaluation_repo = SQLEvaluationRepository(session)
 
     usecase = DeleteCheckpointUseCase(
         checkpoint_repo=checkpoint_repo,
+        training_repo=training_repo,
+        evaluation_repo=evaluation_repo,
+        engine_registry=engine_registry,
     )
 
-    request = DeleteCheckpointRequest(
-        checkpoint_id=checkpoint_id,
+    return usecase.execute(
+        DeleteCheckpointRequest(
+            checkpoint_id=checkpoint_id,
+        )
     )
-
-    return usecase.execute(request)
 
 
 @router.get(
@@ -135,16 +141,16 @@ def get_checkpoint(
         checkpoint_repo=checkpoint_repo,
     )
 
-    request = GetCheckpointRequest(
-        checkpoint_id=checkpoint_id,
+    return usecase.execute(
+        GetCheckpointRequest(
+            checkpoint_id=checkpoint_id,
+        )
     )
-
-    return usecase.execute(request)
 
 
 @router.get(
     "/training/{training_run_id}",
-    response_model=list[CheckpointSummaryResponse],
+    response_model=ListCheckpointsResponse,
 )
 def list_checkpoints(
     training_run_id: UUID,
@@ -157,11 +163,35 @@ def list_checkpoints(
         checkpoint_repo=checkpoint_repo,
     )
 
-    request = ListCheckpointsRequest(
-        training_run_id=training_run_id,
+    return usecase.execute(
+        ListCheckpointsRequest(
+            training_run_id=training_run_id,
+        )
     )
 
-    return usecase.execute(request)
+
+@router.get(
+    "/training/{training_run_id}/latest",
+    response_model=CheckpointSummaryResponse,
+)
+def get_latest_checkpoint(
+    training_run_id: UUID,
+    session: Session = Depends(get_session),
+):
+
+    checkpoint_repo = SQLCheckpointRepository(session)
+    training_repo = SQLTrainingRunRepository(session)
+
+    usecase = GetLatestCheckpointUseCase(
+        training_repo=training_repo,
+        checkpoint_repo=checkpoint_repo,
+    )
+
+    return usecase.execute(
+        GetLatestCheckpointRequest(
+            training_run_id=training_run_id,
+        )
+    )
 
 
 @router.get(
@@ -174,36 +204,15 @@ def get_best_checkpoint(
 ):
 
     checkpoint_repo = SQLCheckpointRepository(session)
+    training_repo = SQLTrainingRunRepository(session)
 
     usecase = GetBestCheckpointUseCase(
+        training_repo=training_repo,
         checkpoint_repo=checkpoint_repo,
     )
 
-    request = GetBestCheckpointRequest(
-        training_run_id=training_run_id,
+    return usecase.execute(
+        GetBestCheckpointRequest(
+            training_run_id=training_run_id,
+        )
     )
-
-    return usecase.execute(request)
-
-
-@router.post(
-    "/{checkpoint_id}/evaluate",
-    response_model=EvaluationCreatedResponse,
-)
-def evaluate_checkpoint(
-    checkpoint_id: UUID,
-    request: StartEvaluationRequest,
-    session: Session = Depends(get_session),
-):
-
-    checkpoint_repo = SQLCheckpointRepository(session)
-    evaluation_repo = SQLEvaluationRepository(session)
-
-    usecase = StartEvaluationUseCase(
-        checkpoint_repo=checkpoint_repo,
-        evaluation_repo=evaluation_repo,
-    )
-
-    request.checkpoint_id = checkpoint_id
-
-    return usecase.execute(request)

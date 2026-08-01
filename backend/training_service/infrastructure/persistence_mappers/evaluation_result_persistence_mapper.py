@@ -40,8 +40,6 @@ class EvaluationPersistenceMapper:
 
             status=evaluation.status,
 
-            num_episodes=evaluation.num_episodes,
-
             notes=evaluation.notes,
 
             # -------------------------
@@ -63,12 +61,10 @@ class EvaluationPersistenceMapper:
             episode_length=evaluation.metrics.episode_length,
 
             # -------------------------
-            # Timestamps
+            # Timestamp
             # -------------------------
 
             created_at=evaluation.created_at,
-
-            finished_at=evaluation.finished_at,
         )
 
     @staticmethod
@@ -91,8 +87,6 @@ class EvaluationPersistenceMapper:
             # -------------------------
 
             status=model.status,
-
-            num_episodes=model.num_episodes,
 
             notes=model.notes,
 
@@ -118,10 +112,8 @@ class EvaluationPersistenceMapper:
             ),
 
             # -------------------------
-            # Timestamps
+            # Timestamp
             # -------------------------
 
             created_at=model.created_at,
-
-            finished_at=model.finished_at,
         )

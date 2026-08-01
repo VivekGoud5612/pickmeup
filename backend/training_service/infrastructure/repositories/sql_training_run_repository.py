@@ -68,7 +68,6 @@ class SQLTrainingRunRepository(TrainingRunRepository):
         model.name = updated.name
         model.algorithm = updated.algorithm
         model.status = updated.status
-        model.episode = updated.episode
         model.step = updated.step
         model.configuration_id = updated.configuration_id
         model.latest_checkpoint_id = updated.latest_checkpoint_id

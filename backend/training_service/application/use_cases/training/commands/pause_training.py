@@ -12,8 +12,11 @@ from backend.training_service.application.repositories.training_repository impor
 from backend.training_service.application.mappers.training_mapper import (
     TrainingMapper,
 )
-from backend.engine_gateway.infrastructure.dummyengine_registry import (
-    DummyEngineRegistry,
+from backend.engine_gateway.infrastructure.engine_registry import (
+    EngineRegistry,
+)
+from backend.engine_gateway.application.dto.requests import (
+    PauseEngineTrainingRequest,
 )
 
 
@@ -25,7 +28,7 @@ class PauseTrainingUseCase:
     def __init__(
         self,
         training_repo: TrainingRunRepository,
-        engine_registry: DummyEngineRegistry,
+        engine_registry: EngineRegistry,
     ) -> None:
 
         self._training_repo = training_repo
@@ -44,13 +47,12 @@ class PauseTrainingUseCase:
             request.training_run_id,
         )
 
-        engine_client.pause()
-
-        training_run.pause()
-
-        self._training_repo.update(
-            training_run,
+        engine_client.pause(
+            PauseEngineTrainingRequest(),
         )
+
+        # Database state is updated asynchronously
+        # by TrainingPausedHandler.
 
         return TrainingMapper.to_summary(
             training_run,

@@ -1,5 +1,6 @@
 from __future__ import annotations 
 
+from pathlib import Path
 from abc import ABC , abstractmethod
 from uuid import UUID 
 
@@ -28,6 +29,13 @@ class CheckpointRepository(ABC):
     def get_by_id(self, checkpoint_id: UUID,) -> TrainingCheckpoint:
         """
         Retrieve a checkpoint by its identifier.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_by_path(self, checkpoint_path: Path,) -> TrainingCheckpoint:
+        """
+        Retrieve a checkpoint using its filesystem path.
         """
         raise NotImplementedError
 

@@ -14,7 +14,11 @@ from backend.training_service.app.routes.checkpoint_router import (
     router as checkpoint_router,
 )
 
-# Later
+from backend.training_service.app.routes.replay_router import (
+    router as replay_router,
+)
+
+# Future
 # from backend.training_service.app.routes.configuration_router import (
 #     router as configuration_router,
 # )
@@ -30,22 +34,27 @@ app = FastAPI(
 @app.on_event("startup")
 def startup() -> None:
     """
-    Initialize the database schema on application startup.
+    Initialize database schema.
 
     NOTE:
-    This is intended only for development.
-    Later this should be replaced with Alembic migrations.
+    Development only.
+    Replace with Alembic migrations in production.
     """
     init_database()
 
 
+# -------------------------
+# Routers
+# -------------------------
+
 app.include_router(training_router)
 app.include_router(checkpoint_router)
+app.include_router(replay_router)
 # app.include_router(configuration_router)
 
 
 @app.get("/")
-async def root():
+def root():
     return {
         "message": "PickMeUp Training Service is running",
     }

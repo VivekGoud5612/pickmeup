@@ -15,6 +15,8 @@ class HyperParameters:
     """
     learning_rate : float
 
+    total_timesteps : int
+
     num_envs : int 
     
     gamma : float 
@@ -47,6 +49,9 @@ class HyperParameters:
 
         if self.learning_rate <= 0:
             raise ValueError("Learning rate must be positive.")
+        
+        if self.total_timesteps <= 0:
+            raise ValueError("Total time steps should be positive.")
 
         if not 0.0 < self.gamma <= 1.0:
             raise ValueError("Gamma must lie in (0, 1].")
@@ -177,6 +182,19 @@ class CurriculumSettings:
         if self.reward_scale <= 0:
             raise ValueError("Reward scale must be positive.")
 
+    def with_difficulty(
+        self,
+        difficulty_level: int,
+    ) -> "CurriculumSettings":
+
+        return CurriculumSettings(
+            boss_hp=self.boss_hp,
+            spawn_radius=self.spawn_radius,
+            grid_size=self.grid_size,
+            max_steps=self.max_steps,
+            difficulty_level=difficulty_level,
+            reward_scale=self.reward_scale,
+        )
 
 
 
@@ -195,11 +213,7 @@ class TrainingProgress:
     Snapshot of training progress.
     """
 
-    episode: int   ## Alreayd current as this is accessed by the current object....
-
     step: int
-
-    total_episodes: int | None = None
 
     total_steps: int | None = None  # Let us move elapsed time to some monitoring, as here we just need training progress and nothing else...
 
@@ -208,23 +222,12 @@ class TrainingProgress:
 
     def _validate(self) -> None:
 
-        if self.episode < 0:
-            raise ValueError(
-                "Current episode cannot be negative."
-            )
 
         if self.step < 0:
             raise ValueError(
                 "Current step cannot be negative."
             )
 
-        if (
-            self.total_episodes is not None
-            and self.total_episodes < 0
-        ):
-            raise ValueError(
-                "Total episodes must be positive."
-            )
 
         if (
             self.total_steps is not None
@@ -240,18 +243,12 @@ class TrainingProgress:
         Percentage completion if total episodes are known.
         """
 
-        if self.total_episodes is None:
+        if self.total_steps is None:
             return None
 
         return (
-            self.episode / self.total_episodes
+            self.step / self.total_steps
         ) * 100.0
-    
-    def advance_episode(self) -> None:   ## Return new objects for each iteration... To make this read more beutifully,...., for now mutable
-        self.episode += 1
-    
-    def advance_step(self, amount : int) -> None:
-        self.step += amount
     
 
 

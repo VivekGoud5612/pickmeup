@@ -14,7 +14,6 @@ from backend.training_service.application.mappers.checkpoint_mapper import (
 )
 
 
-
 class ListCheckpointsUseCase:
 
     def __init__(
@@ -29,13 +28,15 @@ class ListCheckpointsUseCase:
         request: ListCheckpointsRequest,
     ) -> ListCheckpointsResponse:
 
-        checkpoints = self._checkpoint_repo.list_all(
-            request.training_run_id
+        checkpoints = self._checkpoint_repo.list_by_run(
+            request.training_run_id,
         )
 
         return ListCheckpointsResponse(
             checkpoints_summary=[
-                CheckpointMapper.to_summary(checkpoint)
+                CheckpointMapper.to_summary(
+                    checkpoint,
+                )
                 for checkpoint in checkpoints
-            ]
+            ],
         )

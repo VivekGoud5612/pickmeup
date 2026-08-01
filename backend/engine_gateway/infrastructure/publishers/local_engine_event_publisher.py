@@ -1,9 +1,11 @@
 from __future__ import annotations 
 
+from collections import defaultdict
+
 from backend.engine_gateway.application.contracts.engine_event_publisher import EngineEventPublisher 
 
 from backend.engine_gateway.application.events.base import EngineEvent 
-from backend.engine_gateway.application.handlers.base import EngineEventHandler
+from backend.training_service.application.event_handlers.base import EngineEventHandler
 
 
 class LocalEngineEventPublisher(EngineEventPublisher):
@@ -12,7 +14,7 @@ class LocalEngineEventPublisher(EngineEventPublisher):
     """
     
     def __init__(self) -> None:
-        self._handler : dict[type[EngineEvent], list[EngineEventHandler]] = defaultdict(list)   ### Due to the fact that there are many types of events inheriting from base... We create the key for each type like training, checkpoint, evaluation or such...
+        self._handlers : dict[type[EngineEvent], list[EngineEventHandler]] = defaultdict(list)   ### Due to the fact that there are many types of events inheriting from base... We create the key for each type like training, checkpoint, evaluation or such...
 
 
     def publish(self, event : EngineEvent) -> None:
@@ -25,7 +27,7 @@ class LocalEngineEventPublisher(EngineEventPublisher):
             handler.handle(event)   ### This handle is taken care by the handler
 
         
-    def register_handle(self, event_type : type[EngineEvent], handler : EngineEventHandler) -> None:
+    def register_handler(self, event_type : type[EngineEvent], handler : EngineEventHandler) -> None:
         """
         THe type becomes the key and the handler becomes the value..
         For each type of event, we have different handlers

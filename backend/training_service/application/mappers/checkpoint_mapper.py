@@ -25,7 +25,6 @@ class CheckpointMapper:
             id=checkpoint.id,
             training_run_id=checkpoint.training_run_id,
             progress=checkpoint.progress,
-            checkpoint_type=checkpoint.checkpoint_type,
             created_at=checkpoint.created_at,
             is_best=checkpoint.is_best,
         )

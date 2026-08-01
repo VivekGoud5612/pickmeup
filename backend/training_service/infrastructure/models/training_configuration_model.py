@@ -80,6 +80,11 @@ class TrainingConfigurationModel(Base):
         nullable=False,
     )
 
+    total_timesteps: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )
+
     num_envs: Mapped[int] = mapped_column(
         Integer,
         nullable=False,

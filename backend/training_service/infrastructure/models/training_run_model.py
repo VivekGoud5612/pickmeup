@@ -51,12 +51,6 @@ class TrainingRunModel(Base):
         nullable=False,
     )
 
-    # Flattened TrainingProgress value object
-    episode: Mapped[int] = mapped_column(
-        Integer,
-        default=0,
-        nullable=False,
-    )
 
     step: Mapped[int] = mapped_column(
         Integer,

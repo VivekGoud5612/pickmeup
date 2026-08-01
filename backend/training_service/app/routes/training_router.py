@@ -18,6 +18,12 @@ from backend.training_service.infrastructure.repositories.sql_training_run_repos
 from backend.training_service.infrastructure.repositories.sql_training_configuration_repository import (
     SQLTrainingConfigurationRepository,
 )
+from backend.training_service.infrastructure.repositories.sql_checkpoint_repository import (
+    SQLCheckpointRepository,
+)
+from backend.training_service.infrastructure.repositories.sql_evaluation_repository import (
+    SQLEvaluationRepository,
+)
 
 from backend.engine_gateway.infrastructure.registry_instance import (
     engine_registry,
@@ -80,10 +86,14 @@ def start_training(
 
     training_repo = SQLTrainingRunRepository(session)
     configuration_repo = SQLTrainingConfigurationRepository(session)
+    checkpoint_repo = SQLCheckpointRepository(session)
+    evaluation_repo = SQLEvaluationRepository(session)
 
     usecase = StartTrainingUseCase(
         training_repo=training_repo,
         training_config_repo=configuration_repo,
+        checkpoint_repo=checkpoint_repo,
+        evaluation_repo=evaluation_repo,
         engine_registry=engine_registry,
     )
 
@@ -106,11 +116,11 @@ def pause_training(
         engine_registry=engine_registry,
     )
 
-    request = PauseTrainingRequest(
-        training_run_id=training_run_id,
+    return usecase.execute(
+        PauseTrainingRequest(
+            training_run_id=training_run_id,
+        )
     )
-
-    return usecase.execute(request)
 
 
 @router.post(
@@ -129,11 +139,11 @@ def resume_training(
         engine_registry=engine_registry,
     )
 
-    request = ResumeTrainingRequest(
-        training_run_id=training_run_id,
+    return usecase.execute(
+        ResumeTrainingRequest(
+            training_run_id=training_run_id,
+        )
     )
-
-    return usecase.execute(request)
 
 
 @router.post(
@@ -152,11 +162,11 @@ def stop_training(
         engine_registry=engine_registry,
     )
 
-    request = StopTrainingRequest(
-        training_run_id=training_run_id,
+    return usecase.execute(
+        StopTrainingRequest(
+            training_run_id=training_run_id,
+        )
     )
-
-    return usecase.execute(request)
 
 
 @router.delete(
@@ -169,17 +179,23 @@ def delete_training(
 ):
 
     training_repo = SQLTrainingRunRepository(session)
+    config_repo = SQLTrainingConfigurationRepository(session)
+    checkpoint_repo = SQLCheckpointRepository(session)
+    evaluation_repo = SQLEvaluationRepository(session)
 
     usecase = DeleteTrainingUseCase(
         training_repo=training_repo,
+        config_repo=config_repo,
+        checkpoint_repo=checkpoint_repo,
+        evaluation_repo=evaluation_repo,
         engine_registry=engine_registry,
     )
 
-    request = DeleteTrainingRequest(
-        training_run_id=training_run_id,
+    return usecase.execute(
+        DeleteTrainingRequest(
+            training_run_id=training_run_id,
+        )
     )
-
-    return usecase.execute(request)
 
 
 @router.get(
@@ -197,11 +213,11 @@ def get_training(
         training_repo=training_repo,
     )
 
-    request = GetTrainingSummaryRequest(
-        training_run_id=training_run_id,
+    return usecase.execute(
+        GetTrainingSummaryRequest(
+            training_run_id=training_run_id,
+        )
     )
-
-    return usecase.execute(request)
 
 
 @router.get(
@@ -218,6 +234,6 @@ def list_training_runs(
         training_repo=training_repo,
     )
 
-    request = ListTrainingRunsRequest()
-
-    return usecase.execute(request)
+    return usecase.execute(
+        ListTrainingRunsRequest()
+    )

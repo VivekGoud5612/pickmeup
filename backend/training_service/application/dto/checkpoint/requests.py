@@ -12,9 +12,11 @@ class SaveCheckpointRequest:
 
     training_run_id : UUID 
 
-    episode : int   ## Note that there are no weights as the backend already considers that, and we can get them from training_run_id.config_id.weights (hyper or rew or cur)
+    checkpoint_name : str
 
-    step : int 
+    # episode : int   ## Note that there are no weights as the backend already considers that, and we can get them from training_run_id.config_id.weights (hyper or rew or cur)
+
+    # step : int 
 
     notes : str = ""
 

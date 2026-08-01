@@ -57,26 +57,13 @@ class TrainingRun:
         if self.status not in (TrainingStatus.RUNNING, TrainingStatus.PAUSED):
             raise RuntimeError("Training is not running or is not paused, so it cannot be stopped")
 
-        self.status = TrainingStatus.STOPPED
+        self.status = TrainingStatus.COMPLETED
         self.finished_at = datetime.now(UTC)
 
     def fail(self) -> None:
         self.status = TrainingStatus.FAILED
         self.finished_at = datetime.now(UTC)
 
-        
-    ### Progress Methods
-    def advance_episode(self) -> None:   ## Instead of direct object manipulation using these methods would be more safe...
-        if self.status != TrainingStatus.RUNNING:
-            raise RuntimeError("Training is not running")
-            
-        self.progress.advance_episode()
-
-    def advance_step(self, amount : int = 1) -> None:   ## As 8 envs running in parallel.. there could be many steps incrementing after each timestep
-        if self.status != TrainingStatus.RUNNING:
-            raise RuntimeError("training is not running")
-
-        self.progress.advance_step(amount)
         
     def attach_latest_checkpoint(self, checkpoint_id : UUID) -> None:   ## attach object to object...
         self.latest_checkpoint_id = checkpoint_id   ## Think of TrainingCheckpointConfig as a entity containing things like id, time and suhc.
@@ -86,3 +73,6 @@ class TrainingRun:
 
     def attach_config(self, config_id : UUID) -> None:
         self.configuration_id = config_id 
+
+    def detach_latest_checkpoint(self) -> None:
+        self.latest_checkpoint_id = None

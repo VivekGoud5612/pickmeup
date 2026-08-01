@@ -10,7 +10,6 @@ class RolloutBuffer:
         num_envs : int,
         num_agents : int,
         obs_shape : Tuple[int, ...],
-        intent_shape : Tuple[int, ...],
         global_state_shape : Tuple[int, ...],
         actions_shape : Tuple[int, ...],
         device : torch.device
@@ -23,9 +22,8 @@ class RolloutBuffer:
         self.pointer = 0
 
         self.obs = np.zeros((num_steps, num_envs, num_agents) + (obs_shape,), dtype = np.float32)
-        self.intents = np.zeros((num_steps, num_envs, num_agents) + (intent_shape,), dtype = np.float32)  ## Note that intent shape would be 24.. Append the same intent across all the agents inside a team
         self.state = np.zeros((num_steps, num_envs, num_agents) + (global_state_shape,), dtype = np.float32)  ## Now each agent as well.. Simply because it would be easy .., we could store it and use it by repeating as before but env returning (num_envs, num_agents, 96) would be more easy to implement
-        self.actions = np.zeros((num_steps, num_envs, num_agents), dtype = np.float32)
+        self.actions = np.zeros((num_steps, num_envs, num_agents), dtype = np.int64)
         self.rewards = np.zeros((num_steps, num_envs, num_agents), dtype = np.float32)
         self.values = np.zeros((num_steps, num_envs, num_agents), dtype = np.float32)  ## Again for number_of_agents, as we will get different values for each agent...
         self.log_probs = np.zeros((num_steps, num_envs, num_agents), dtype = np.float32)
@@ -39,7 +37,6 @@ class RolloutBuffer:
     def store(
         self,
         local_obs : np.ndarray,
-        local_intents : np.ndarray,
         global_state : np.ndarray,
         actions : np.ndarray,
         log_probs : np.ndarray,
@@ -53,7 +50,6 @@ class RolloutBuffer:
         assert self.pointer < self.num_steps, 'Rollout buffer overflow. Call compute_returns() and clear.'
 
         self.obs[self.pointer] = local_obs
-        self.intents[self.pointer] = local_intents
         self.state[self.pointer] = global_state
         self.actions[self.pointer] = actions
         self.log_probs[self.pointer] = log_probs
@@ -97,7 +93,6 @@ class RolloutBuffer:
         np.random.shuffle(indices)
 
         obs_tensor = torch.as_tensor(self.obs.reshape(flat_size, self.num_agents, -1), device = self.device)  ## We flter the agents out in trainer and recombine them so this is good....
-        intents_tensor = torch.as_tensor(self.intents.reshape(flat_size, self.num_agents, -1), device = self.device)
         actions_tensor = torch.as_tensor(self.actions.reshape(flat_size, self.num_agents, -1), device = self.device)
         log_probs_tensor = torch.as_tensor(self.log_probs.reshape(flat_size, self.num_agents), device = self.device)
         advantages_tensor = torch.as_tensor(self.advantages.reshape(flat_size, self.num_agents), device = self.device)
@@ -115,7 +110,6 @@ class RolloutBuffer:
             yield {
                 
                 "obs": obs_tensor[mb_indices],
-                "intents" : intents_tensor[mb_indices],
                 "actions": actions_tensor[mb_indices],
                 "log_probs": log_probs_tensor[mb_indices],
                 "advantages": advantages_tensor[mb_indices],

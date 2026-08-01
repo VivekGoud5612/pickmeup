@@ -1,5 +1,5 @@
-from backend.engine_gateway.infrastructure.dummyengine_registry import (
-    DummyEngineRegistry,
+from backend.engine_gateway.infrastructure.engine_registry import (
+    EngineRegistry,
 )
 
-engine_registry = DummyEngineRegistry()
+engine_registry = EngineRegistry()

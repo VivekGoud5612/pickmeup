@@ -7,14 +7,17 @@ import torch.nn as nn
 
 class SwarmManager:  ## Normal class and is responsible for running 4 different agents.. and make this according to the trainer so that we cna use tha tdirectly.....
 
-    def __init__(self, base_obs_dim : int = 24, hero_intent_dim : int = 24, global_obs_dim : int = 96, actions_dim : dict = None, alr : float = 3e-4, clr : float = 1e-3):  ### There are three heroes and their itnents get broadcasted to all agents after one pass...
+    def __init__(self, base_obs_dim : int = 24, global_obs_dim : int = 96, actions_dim : dict = None, alr : float = 3e-4, clr : float = 1e-3):  ### There are three heroes and their itnents get broadcasted to all agents after one pass...
        # base_obs_dim = base_obs_dim + hero_intent_dim
 
+        print("S1")
         self.tank_actor = Actor(base_obs_dim)
         self.dealer_actor = Actor(base_obs_dim)
         self.healer_actor = Actor(base_obs_dim)
 
         self.boss_actor = Actor(base_obs_dim)
+
+        print("S2")
 
         self.tank_critic = Critic(global_obs_dim) ### For now all the action spaces are the same..
         self.dealer_critic = Critic(global_obs_dim)
@@ -22,16 +25,25 @@ class SwarmManager:  ## Normal class and is responsible for running 4 different 
 
         self.boss_critic = Critic(global_obs_dim)
 
+        print("S3")
+
         ##OPTIMIZERS.. We group the parameters inside one singe optimizer as that can easily differentiate between the losses and update weights accordingly
         self.tank_aoptim = optim.Adam(self.tank_actor.parameters(), lr = alr)
+        print("S31")
         self.dealer_aoptim = optim.Adam(self.dealer_actor.parameters(), lr = alr)
+        print("S32")
         self.healer_aoptim = optim.Adam(self.healer_actor.parameters(), lr = alr)
+        print("S33")
         self.boss_aoptim = optim.Adam(self.boss_actor.parameters(), lr = alr)
+
+        print("S4")
 
         self.tank_coptim = optim.Adam(self.tank_critic.parameters(), lr = clr)
         self.dealer_coptim = optim.Adam(self.dealer_critic.parameters(), lr = clr)
         self.healer_coptim = optim.Adam(self.healer_critic.parameters(), lr = clr)
         self.boss_coptim = optim.Adam(self.boss_critic.parameters(), lr = clr)
+
+        print("S5")
 
     def to(self, device):
         self.device = device
@@ -76,15 +88,6 @@ class SwarmManager:  ## Normal class and is responsible for running 4 different 
 
         boss_dist = self.boss_actor(boss_obs, boss_action_masks) ## No need for two pass here as boss is a single agent..
 
-        ## DUMMY INTENT PASS AND FIRST PASS
-        dummy_hero_intent = torch.zeros((num_envs, 24), device = self.device) ## Create a dummy hero intent, so that we can start our first pass
-
-        #tank_dist = self.tank_actor(torch.cat([tank_obs, dummy_hero_intent], dim = -1), tank_action_masks)  ## Tank intent.. first pass..
-        #dealer_dist = self.dealer_actor(torch.cat([dealer_obs, dummy_hero_intent], dim = -1), dealer_action_masks)  ## concat along the last dimensions.. that is keep addign elements along the last dim
-        #healer_dist = self.healer_actor(torch.cat([healer_obs, dummy_hero_intent], dim = -1), healer_action_masks)  # As that is a distribution we take the values of those distributions namely logits with dist.logits attribute
-
-        ### TEAM BROADCAST - Heroes share the intent to all the other heroes in the same team.. And instead of logits which are sometimes -inf, and that into 0 gives us nan.. so we use probs
-        #hero_intent_broadcast = torch.cat([tank_dist.probs, dealer_dist.probs, healer_dist.probs], dim = -1).detach() ## Detach removes this tensor from pytorchs computation graph... (detaches the tensor from automatic differentiation..)
 
         tank_dist_final = self.tank_actor(tank_obs, tank_action_masks)
         dealer_dist_final = self.dealer_actor(dealer_obs, dealer_action_masks)
@@ -98,7 +101,6 @@ class SwarmManager:  ## Normal class and is responsible for running 4 different 
         return (
             (tank_dist_final, dealer_dist_final, healer_dist_final, boss_dist),
             (tank_value, dealer_value, healer_value, boss_value),
-            (dummy_hero_intent)  ## So that we can store that in the rollout buffer
         )
         
 

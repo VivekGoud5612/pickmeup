@@ -88,6 +88,7 @@ class SQLTrainingConfigurationRepository(
         # -------------------------
 
         model.learning_rate = updated.learning_rate
+        model.total_timesteps = updated.total_timesteps
         model.num_envs = updated.num_envs
         model.gamma = updated.gamma
         model.gae_lambda = updated.gae_lambda

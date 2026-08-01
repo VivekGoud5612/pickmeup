@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from uuid import uuid4
+from pathlib import Path
 
 from backend.training_service.application.dto.training.requests import (
     StartTrainingRequest,
@@ -15,6 +16,12 @@ from backend.training_service.application.repositories.training_repository impor
 from backend.training_service.application.repositories.training_configuration_repository import (
     TrainingConfigurationRepository,
 )
+from backend.training_service.application.repositories.checkpoint_repository import (
+    CheckpointRepository,
+)
+from backend.training_service.application.repositories.evaluation_repository import (
+    EvaluationRepository,
+)
 
 from backend.training_service.application.mappers.training_mapper import (
     TrainingMapper,
@@ -23,7 +30,6 @@ from backend.training_service.application.mappers.training_mapper import (
 from backend.training_service.domain.entities.training_run import (
     TrainingRun,
 )
-
 from backend.training_service.domain.entities.training_config import (
     TrainingConfiguration,
 )
@@ -39,8 +45,13 @@ from backend.training_service.domain.value_objects import (
     TrainingProgress,
 )
 
-from backend.engine_gateway.infrastructure.dummyengine_registry import (
-    DummyEngineRegistry,
+from backend.engine_gateway.infrastructure.engine_registry import (
+    EngineRegistry,
+)
+
+from backend.engine_gateway.application.dto.requests import (
+    InitializeEngineTrainingRequest,
+    StartEngineTrainingRequest,
 )
 
 
@@ -50,11 +61,15 @@ class StartTrainingUseCase:
         self,
         training_repo: TrainingRunRepository,
         training_config_repo: TrainingConfigurationRepository,
-        engine_registry: DummyEngineRegistry,
+        checkpoint_repo: CheckpointRepository,
+        evaluation_repo: EvaluationRepository,
+        engine_registry: EngineRegistry,
     ) -> None:
 
         self._training_repo = training_repo
         self._training_config_repo = training_config_repo
+        self._checkpoint_repo = checkpoint_repo
+        self._evaluation_repo = evaluation_repo
         self._engine_registry = engine_registry
 
     def execute(
@@ -69,27 +84,44 @@ class StartTrainingUseCase:
         curriculum_settings = self._create_curriculum_settings(request)
 
         configuration = self._create_configuration(
-            request,
-            hyperparameters,
-            reward_weights,
-            curriculum_settings,
+            request=request,
+            hyperparameters=hyperparameters,
+            reward_weights=reward_weights,
+            curriculum_settings=curriculum_settings,
         )
 
-        self._training_config_repo.save(configuration)
-
-        training_run_id = uuid4()
+        self._training_config_repo.save(
+            configuration,
+        )
 
         training_run = self._create_training_run(
-            request,
-            configuration,
-            training_run_id,
+            request=request,
+            configuration=configuration,
+            training_run_id=uuid4(),
         )
 
-        training_run.start()
+        self._training_repo.save(
+            training_run,
+        )
 
-        self._training_repo.save(training_run)
+        engine_client = self._engine_registry.create(
+        training_run_id=training_run.id,
+        request=InitializeEngineTrainingRequest(
+            run_id=training_run.id,
+            configuration=configuration,
+            checkpoint_directory=Path("/home/vikas/pickmeup/checkpoints"),
+            checkpoint_path=None,
+            device="cuda",
+        ),
+        training_repo=self._training_repo,
+        configuration_repo=self._training_config_repo,
+        checkpoint_repo=self._checkpoint_repo,
+        evaluation_repo=self._evaluation_repo,
+)
 
-        self._engine_registry.create(training_run_id)
+        engine_client.start(
+            StartEngineTrainingRequest(),
+        )
 
         return TrainingMapper.to_created(
             training_run,
@@ -102,6 +134,7 @@ class StartTrainingUseCase:
 
         return HyperParameters(
             learning_rate=request.hyperparameters.learning_rate,
+            total_timesteps=request.hyperparameters.total_timesteps,
             num_envs=request.hyperparameters.num_envs,
             gamma=request.hyperparameters.gamma,
             gae_lambda=request.hyperparameters.gae_lambda,
@@ -141,10 +174,10 @@ class StartTrainingUseCase:
         return CurriculumSettings(
             boss_hp=request.curriculum_settings.boss_hp,
             spawn_radius=request.curriculum_settings.spawn_radius,
+            grid_size=request.curriculum_settings.grid_size,
             max_steps=request.curriculum_settings.max_steps,
             difficulty_level=request.curriculum_settings.difficulty_level,
             reward_scale=request.curriculum_settings.reward_scale,
-            grid_size=request.curriculum_settings.grid_size,
         )
 
     def _create_configuration(
@@ -164,7 +197,7 @@ class StartTrainingUseCase:
             hyperparameters=hyperparameters,
             reward_weights=reward_weights,
             curriculum=curriculum_settings,
-            description=request.notes
+            description=request.notes,
         )
 
     def _create_training_run(
@@ -180,7 +213,6 @@ class StartTrainingUseCase:
             algorithm=request.algorithm,
             status=TrainingStatus.CREATED,
             progress=TrainingProgress(
-                episode=0,
                 step=0,
             ),
             configuration_id=configuration.id,

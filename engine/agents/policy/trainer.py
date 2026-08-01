@@ -23,11 +23,20 @@ class MAgent:
 
     def __init__(self, device : torch.device, lr_actor : float = 3e-4, lr_critic : float = 1e-3):
 
+        import os
+
+        print(f"[MAGENT INIT] PID={os.getpid()}")
+
+        print("A")
         self.device = device 
         self.eps_clip = 0.2  ## Epsilon clipping , used at last... for surr 2 that is to limit the actor updates
         self.value_normalizer = ValueNormalizer()
 
+        print("B")
+
         self.swarm = SwarmManager()
+
+        print("C")
         self.swarm = self.swarm.to(self.device)
 
     @torch.no_grad()
@@ -37,7 +46,7 @@ class MAgent:
         t_global_state = torch.as_tensor(global_state, dtype=torch.float32, device=self.device)
         t_masks = torch.as_tensor(action_masks, dtype=torch.bool, device=self.device)
 
-        dists, values, intent = self.swarm.get_actions_and_values(t_obs, t_global_state, t_masks)
+        dists, values = self.swarm.get_actions_and_values(t_obs, t_global_state, t_masks)
 
         tank_dist, dealer_dist, healer_dist, boss_dist = dists  ## Shape (num_evns, ) 
         tank_val, dealer_val, healer_val, boss_val = values
@@ -65,14 +74,7 @@ class MAgent:
         log_probs = torch.stack([tank_log_prob, dealer_log_prob, healer_log_prob, boss_log_prob], dim=1)
         state_values = torch.stack([tank_val, dealer_val, healer_val, boss_val], dim=1)
 
-        # ----------------------------------------------------
-        # THE FIX: Expand the intent to cover all 4 agent slots
-        # unsqueeze(1) makes it (8, 1, 24)
-        # expand(-1, 4, -1) stretches it to (8, 4, 24)
-        # ----------------------------------------------------
-        intent_expanded = intent.unsqueeze(1).expand(-1, 4, -1)  ## (-1 - let this dim stay as is).. Need to revisit torchs dynamics on how GPU reads this.. (doesnt copy data physically but reads 4 times.. need to read)
-
-        return actions.detach().cpu().numpy(), log_probs.detach().cpu().numpy(), state_values.detach().cpu().numpy(), intent_expanded.detach().cpu().numpy()
+        return actions.detach().cpu().numpy(), log_probs.detach().cpu().numpy(), state_values.detach().cpu().numpy()
 
 
     def update(self, batch : Dict[str, torch.Tensor], ent_coef : float, ppo_epochs : int = 4) -> Dict[str, float]:  # A single update method for a single batch by a single batch creator..
@@ -92,7 +94,6 @@ class MAgent:
             for role in AgentRole:
                 b_obs = batch['obs'][:, role, :]              # Shape: (mini_batch_size, 24)
                 b_global = batch['global_state'][:, role, :]     # Shape: (mini_batch_size, 96)
-                b_intents = batch['intents'][:, role, :]        ## Shape (mini_batch, 24)
                 b_actions = batch['actions'][:, role,]        # Shape: (mini_batch_size,)
                 b_log_probs = batch['log_probs'][:, role,]    # Shape: (mini_batch_size,)
                 b_advs = batch['advantages'][:, role,]         # Shape: (mini_batch_size,)

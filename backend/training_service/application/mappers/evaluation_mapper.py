@@ -1,52 +1,18 @@
 from __future__ import annotations
 
-from backend.training_service.domain.entities.evaluation_result import (
-    EvaluationResult,
-)
-
-from backend.training_service.application.dto.evaluation.responses import (
-    EvaluationSummaryResponse,
-    EvaluationCreatedResponse,
-    EvaluationDeletedResponse,
+from backend.training_service.application.dto.replay.responses import (
+    ReplayStartedResponse,
 )
 
 
-class EvaluationMapper:
+class ReplayMapper:
     """
-    Maps evaluation entities into response DTOs.
+    Maps replay results into response DTOs.
     """
 
     @staticmethod
-    def to_summary(
-        evaluation: EvaluationResult,
-    ) -> EvaluationSummaryResponse:
+    def to_started() -> ReplayStartedResponse:
 
-        return EvaluationSummaryResponse(
-            id=evaluation.id,
-            checkpoint_id=evaluation.checkpoint_id,
-            status=evaluation.status,
-            metrics=evaluation.metrics,
-            created_at=evaluation.created_at,
-            finished_at=evaluation.finished_at,
-        )
-
-    @staticmethod
-    def to_created(
-        evaluation: EvaluationResult,
-    ) -> EvaluationCreatedResponse:
-
-        return EvaluationCreatedResponse(
-            evaluation_summary=EvaluationMapper.to_summary(
-                evaluation
-            ),
-        )
-
-
-    @staticmethod 
-    def to_deleted(
-        evaluation : EvaluationResult,
-    ) -> EvaluationDeletedResponse:
-
-        return EvaluationDeletedResponse(
-            message=f"Evaluation '{evaluation.id}' deleted successfully."
+        return ReplayStartedResponse(
+            message="Replay started successfully.",
         )

@@ -1,3 +1,4 @@
+
 import traceback
 import numpy as np 
 from multiprocessing.connection import Connection 
@@ -5,6 +6,10 @@ from multiprocessing import shared_memory
 from typing import Callable, Any, Dict
 
 def shared_env_worker(remote : Connection, env_fn : Callable[[], Any], shm_names : Dict[str, Any], shapes : Dict[str, Any], dtypes : Dict[str, Any], env_idx : int):  # remote is a connection, others are in notes and Callable is a type hint we use for functions, where Callable[[for arguments], [for returns]]
+
+    import os
+
+    print(f"[WORKER START] PID={os.getpid()}")
 ## Also shapes is also used for the Numpy object reconstruction
     obs_shm = shared_memory.SharedMemory(name = shm_names['obs'])   ## Get the local views or you could say raw bytes from the memory (shared)
     global_state_shm = shared_memory.SharedMemory(name = shm_names['global_state']) ## This the full state information for critic

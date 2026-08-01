@@ -53,15 +53,15 @@ class EvaluationRepository(ABC):
         """
         raise NotImplementedError
 
-    @abstractmethod
-    def get_latest_by_checkpoint(
-        self,
-        checkpoint_id: UUID,
-    ) -> EvaluationResult | None:
-        """
-        Retrieve the latest evaluation for a checkpoint.
-        """
-        raise NotImplementedError
+    # @abstractmethod
+    # def get_latest_by_checkpoint(
+    #     self,
+    #     checkpoint_id: UUID,
+    # ) -> EvaluationResult | None:
+    #     """
+    #     Retrieve the latest evaluation for a checkpoint.
+    #     """
+    #     raise NotImplementedError
 
     @abstractmethod
     def delete(

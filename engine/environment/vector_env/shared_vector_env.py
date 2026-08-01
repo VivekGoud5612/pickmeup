@@ -11,6 +11,11 @@ class SharedSubprocessVectorEnv:
 
     def __init__(self, env_fns : List[Callable[[], Any]], num_agents : int = 4):
         
+        import os
+
+        print(
+            f"[VECTOR_ENV CREATED] PID={os.getpid()} id={id(self)}"
+        )
         self.closed = False 
         self.num_envs = len(env_fns)
         self.num_agents = num_agents 
@@ -42,6 +47,7 @@ class SharedSubprocessVectorEnv:
             self.shm_names[key] = self.shms[key].name 
             
         
+
         self.shared_arrays = {}  ### For the same reason we do this in shared_worker .. To reconstruct the numpy arrays to get the result of the worker into an array and return that.
         for key in self.shapes:  ### This is so that we can send the calculated data upstream to the main file so as let copy that into rollout buffer...
 
@@ -49,18 +55,18 @@ class SharedSubprocessVectorEnv:
 
 
             ## Process spawning.. pipes!!
-            pipes = [mp.Pipe() for _ in range(self.num_envs)]
-            self.remotes, self.worker_remotes = zip(*pipes)  ## *pipes is unpacking that list into tuples of parent child connections...
-            self.processes = []
+        pipes = [mp.Pipe() for _ in range(self.num_envs)]
+        self.remotes, self.worker_remotes = zip(*pipes)  ## *pipes is unpacking that list into tuples of parent child connections...
+        self.processes = []
 
-            for rank, (worker_remote, env_fn) in enumerate(zip(self.worker_remotes, env_fns)): ## For each worker remote and env_fn and its index rank
-                p = mp.Process(
-                    target = shared_env_worker,  ## Create a process and sort of assign an instance of that function with our worker remote and env_fn
-                    args = (worker_remote, env_fn, self.shm_names, self.shapes, self.dtypes, rank),  ## Arguments for single worker, this loop runs and creates processes till the size of nnum envs..
-                    daemon = True
-                )
-                self.processes.append(p)  # append all process objects inside that list to use it elsewhere 
-                p.start()  ## Start that process.. and it keeps on working till we close it offf....
+        for rank, (worker_remote, env_fn) in enumerate(zip(self.worker_remotes, env_fns)): ## For each worker remote and env_fn and its index rank
+            p = mp.Process(
+                target = shared_env_worker,  ## Create a process and sort of assign an instance of that function with our worker remote and env_fn
+                args = (worker_remote, env_fn, self.shm_names, self.shapes, self.dtypes, rank),  ## Arguments for single worker, this loop runs and creates processes till the size of nnum envs..
+                daemon = True
+            )
+            self.processes.append(p)  # append all process objects inside that list to use it elsewhere 
+            p.start()  ## Start that process.. and it keeps on working till we close it offf....
 
             
     def reset(self, curriculum_level : int = 1) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:

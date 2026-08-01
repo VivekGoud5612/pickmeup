@@ -8,7 +8,6 @@ from sqlalchemy import (
     Enum,
     Float,
     ForeignKey,
-    Integer,
     JSON,
     Text,
 )
@@ -51,11 +50,6 @@ class EvaluationResultModel(Base):
 
     status: Mapped[EvaluationStatus] = mapped_column(
         Enum(EvaluationStatus),
-        nullable=False,
-    )
-
-    num_episodes: Mapped[int] = mapped_column(
-        Integer,
         nullable=False,
     )
 
@@ -105,15 +99,10 @@ class EvaluationResultModel(Base):
     )
 
     # ------------------------------------------------------------------
-    # Timestamps
+    # Timestamp
     # ------------------------------------------------------------------
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-    )
-
-    finished_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
     )

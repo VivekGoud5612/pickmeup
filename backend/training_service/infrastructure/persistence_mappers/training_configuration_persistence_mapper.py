@@ -50,6 +50,7 @@ class TrainingConfigurationPersistenceMapper:
             # -------------------------
 
             learning_rate=configuration.hyperparameters.learning_rate,
+            total_timesteps=configuration.hyperparameters.total_timesteps,
             num_envs=configuration.hyperparameters.num_envs,
             gamma=configuration.hyperparameters.gamma,
             gae_lambda=configuration.hyperparameters.gae_lambda,
@@ -108,6 +109,7 @@ class TrainingConfigurationPersistenceMapper:
             # Metadata
             # -------------------------
 
+            is_training=True,
             name=model.name,
             algorithm=model.algorithm,
             description=model.description,
@@ -119,6 +121,7 @@ class TrainingConfigurationPersistenceMapper:
 
             hyperparameters=HyperParameters(
                 learning_rate=model.learning_rate,
+                total_timesteps=model.total_timesteps,
                 num_envs=model.num_envs,
                 gamma=model.gamma,
                 gae_lambda=model.gae_lambda,
