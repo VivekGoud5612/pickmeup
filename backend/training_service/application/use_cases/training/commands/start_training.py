@@ -109,7 +109,10 @@ class StartTrainingUseCase:
         request=InitializeEngineTrainingRequest(
             run_id=training_run.id,
             configuration=configuration,
-            checkpoint_directory=Path("/home/vikas/pickmeup/checkpoints"),
+            checkpoint_directory = (
+            Path("/home/vikas/pickmeup/checkpoints")
+                / str(training_run.id)
+            ),
             checkpoint_path=None,
             device="cuda",
         ),

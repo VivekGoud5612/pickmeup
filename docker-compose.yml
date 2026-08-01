@@ -1,30 +1,82 @@
+version: "3.9"
+
 services:
 
   backend:
     build: .
     container_name: pickmeup-backend
+
     ports:
       - "8000:8000"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16
+    container_name: postgres
+
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: training_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d training_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
 
   redis:
     image: redis:latest
     container_name: redis
+
+    restart: unless-stopped
+
     ports:
       - "6379:6379"
 
   gateway:
     build: ./node-gateway
     container_name: pickmeup-gateway
+
+    restart: unless-stopped
+
     ports:
       - "3001:3001"
+
     depends_on:
-      - redis
+      redis:
+        condition: service_started
 
   frontend:
     build: ./frontend
     container_name: pickmeup-frontend
+
+    restart: unless-stopped
+
     ports:
       - "5173:5173"
+
     depends_on:
-      - gateway
-      - backend
+      gateway:
+        condition: service_started
+      backend:
+        condition: service_started
+
+volumes:
+  postgres_data:

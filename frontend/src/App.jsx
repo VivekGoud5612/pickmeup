@@ -1,29 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 
 // ==========================================
-// 1. CONFIGURATION & API SERVICES
+// 1. CONFIGURATION
 // ==========================================
-const API_BASE_URL = 'http://localhost:8000/api';
 const WS_URL = 'ws://localhost:3001';
-
-const apiService = {
-  sendCommand: async (endpoint) => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
-      return await response.json();
-    } catch (error) {
-      console.error(`Error sending command to /${endpoint}:`, error);
-      throw error;
-    }
-  },
-  start: () => apiService.sendCommand('start'),
-  stop: () => apiService.sendCommand('stop'),
-  reset: () => apiService.sendCommand('reset'),
-};
 
 // ==========================================
 // 2. CUSTOM HOOKS
@@ -87,50 +67,14 @@ const useWebSocket = (url) => {
 // 3. UI COMPONENTS
 // ==========================================
 
-const ControlPanel = ({ isConnected }) => {
-  const [loading, setLoading] = useState(null);
-
-  const handleAction = async (actionFn, actionName) => {
-    setLoading(actionName);
-    try {
-      await actionFn();
-    } catch (err) {
-      alert(`Failed to execute ${actionName}. Is FastAPI running on port 8000?`);
-    } finally {
-      setLoading(null);
-    }
-  };
-
+const ConnectionStatus = ({ isConnected }) => {
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4 shadow-lg">
+    <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 flex items-center shadow-lg">
       <div className="flex items-center space-x-3">
         <span className={`h-3 w-3 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
         <span className="text-sm font-medium text-slate-300">
           WS Gateway: {isConnected ? 'Connected' : 'Disconnected'}
         </span>
-      </div>
-      <div className="flex items-center gap-3">
-        <button
-          onClick={() => handleAction(apiService.start, 'Start')}
-          disabled={loading !== null}
-          className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 text-white font-semibold rounded-lg transition active:scale-95"
-        >
-          {loading === 'Start' ? '...' : 'Start'}
-        </button>
-        <button
-          onClick={() => handleAction(apiService.stop, 'Pause')}
-          disabled={loading !== null}
-          className="px-5 py-2 bg-amber-600 hover:bg-amber-500 disabled:bg-slate-700 text-white font-semibold rounded-lg transition active:scale-95"
-        >
-          {loading === 'Pause' ? '...' : 'Pause'}
-        </button>
-        <button
-          onClick={() => handleAction(apiService.reset, 'Reset')}
-          disabled={loading !== null}
-          className="px-5 py-2 bg-rose-600 hover:bg-rose-500 disabled:bg-slate-700 text-white font-semibold rounded-lg transition active:scale-95"
-        >
-          {loading === 'Reset' ? '...' : 'Reset'}
-        </button>
       </div>
     </div>
   );
@@ -294,11 +238,11 @@ export default function App() {
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans p-4 md:p-8">
       <div className="max-w-7xl mx-auto flex flex-col gap-6">
         <header>
-          <h1 className="text-2xl font-black tracking-tight text-white">Simulation Dashboard</h1>
-          <p className="text-xs text-slate-400">REST (FastAPI) + WebSockets (Node.js Gateway)</p>
+          <h1 className="text-2xl font-black tracking-tight text-white">Replay Viewer</h1>
+          <p className="text-xs text-slate-400">Redis &rarr; Node.js &rarr; React Pipeline</p>
         </header>
 
-        <ControlPanel isConnected={isConnected} />
+        <ConnectionStatus isConnected={isConnected} />
 
         <main className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           <section className="lg:col-span-5">

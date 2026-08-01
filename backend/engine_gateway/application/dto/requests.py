@@ -72,7 +72,7 @@ class SaveEngineCheckpointRequest:
     """
 
     checkpoint_name: str | None = None
-    checkpoint_Type: CheckpointType = CheckpointType.MANUAL
+    checkpoint_type: CheckpointType = CheckpointType.MANUAL
 
 
 

@@ -1,9 +1,5 @@
 from __future__ import annotations
 
-from backend.engine_gateway.infrastructure.engine_registry import (
-    EngineRegistry,
-)
-
 from backend.training_service.application.dto.replay.requests import (
     ReplayCheckpointRequest,
 )
@@ -16,17 +12,25 @@ from backend.training_service.application.repositories.checkpoint_repository imp
     CheckpointRepository,
 )
 
+from backend.engine_gateway.infrastructure.clients.local_replay_engine_client import (
+    ReplayEngineClient,
+)
+
+from backend.engine_gateway.application.dto.requests import (
+    ReplayCheckpointRequest,
+)
+
 
 class StartReplayUseCase:
 
     def __init__(
         self,
         checkpoint_repo: CheckpointRepository,
-        engine_registry: EngineRegistry,
+        replay_client: ReplayEngineClient,
     ) -> None:
 
         self._checkpoint_repo = checkpoint_repo
-        self._engine_registry = engine_registry
+        self._replay_client = replay_client
 
     def execute(
         self,
@@ -37,13 +41,11 @@ class StartReplayUseCase:
             request.checkpoint_id,
         )
 
-        engine_client = self._engine_registry.get(
-            checkpoint.training_run_id,
-        )
-
-        engine_client.replay(
-            checkpoint_path=checkpoint.file_path,
-            episodes=request.replay_episodes,
+        self._replay_client.replay(
+            ReplayCheckpointRequest(
+                checkpoint_path=checkpoint.file_path,
+                episodes=request.replay_episodes,
+            )
         )
 
         return ReplayStartedResponse()

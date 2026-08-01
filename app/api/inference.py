@@ -18,7 +18,7 @@ class Inference:
         print(f"[*]Booting Inference Engine on {self.device}")
 
         #Initialize the high speed Redis connection during boot
-        self.redis_client = redis.Redis(host = "redis", port = 6379, db = 0)
+        self.redis_client = redis.Redis(host = "127.0.0.1", port = 6379, db = 0)
         print("[*]Redis pub/sub transmitter initialized on port 6379")
 
         self.env = Env(grid_size = 20, max_steps = 200)  ## Here we just initialize a single env because this is not trainingand there is no need for those many envs, there isonly one env
@@ -94,4 +94,24 @@ class Inference:
         self.redis_client.publish('game_frames', json_payload)
 
         return game_state_payload
+
+    def replay(self, episodes: int, ) -> None:
+    """
+    Runs inference for the requested number of episodes.
+
+    Every call to get_next_frame() automatically publishes
+    the latest frame to Redis.
+    """
+
+    completed_episodes = 0
+
+    while completed_episodes < episodes:
+
+        self.get_next_frame()
+
+        if self.env.step_count >= self.env.max_steps:
+            completed_episodes += 1
+
+            if completed_episodes < episodes:
+                self.obs, self.info = self.env.reset()
  

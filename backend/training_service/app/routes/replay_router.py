@@ -16,10 +16,6 @@ from backend.training_service.infrastructure.repositories.sql_checkpoint_reposit
     SQLCheckpointRepository,
 )
 
-from backend.engine_gateway.infrastructure.registry_instance import (
-    engine_registry,
-)
-
 from backend.training_service.application.dto.replay.requests import (
     ReplayCheckpointRequest,
 )
@@ -31,6 +27,11 @@ from backend.training_service.application.dto.replay.responses import (
 from backend.training_service.application.use_cases.replay.commands.start_replay import (
     StartReplayUseCase,
 )
+
+from backend.engine_gateway.infrastructure.clients.local_replay_engine_client import (
+    ReplayEngineClient,
+)
+
 
 router = APIRouter(
     prefix="/replay",
@@ -46,13 +47,15 @@ def start_replay(
     checkpoint_id: UUID,
     body: ReplayCheckpointRequest,
     session: Session = Depends(get_session),
-):
+) -> ReplayStartedResponse:
 
     checkpoint_repo = SQLCheckpointRepository(session)
 
+    replay_client = ReplayEngineClient()
+
     usecase = StartReplayUseCase(
         checkpoint_repo=checkpoint_repo,
-        engine_registry=engine_registry,
+        replay_client=replay_client,
     )
 
     return usecase.execute(
