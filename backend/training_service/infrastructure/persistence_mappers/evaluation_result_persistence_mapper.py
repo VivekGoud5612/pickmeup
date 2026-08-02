@@ -26,25 +26,22 @@ class EvaluationPersistenceMapper:
 
         return EvaluationResultModel(
 
-            # -------------------------
+
             # Identity
-            # -------------------------
 
             id=evaluation.id,
 
             checkpoint_id=evaluation.checkpoint_id,
 
-            # -------------------------
+
             # Evaluation
-            # -------------------------
 
             status=evaluation.status,
 
             notes=evaluation.notes,
 
-            # -------------------------
+
             # Performance Metrics
-            # -------------------------
 
             average_reward=evaluation.metrics.average_reward,
 
@@ -60,9 +57,8 @@ class EvaluationPersistenceMapper:
 
             episode_length=evaluation.metrics.episode_length,
 
-            # -------------------------
+
             # Timestamp
-            # -------------------------
 
             created_at=evaluation.created_at,
         )
@@ -74,25 +70,21 @@ class EvaluationPersistenceMapper:
 
         return EvaluationResult(
 
-            # -------------------------
+
             # Identity
-            # -------------------------
 
             id=model.id,
 
             checkpoint_id=model.checkpoint_id,
 
-            # -------------------------
+
             # Evaluation
-            # -------------------------
 
             status=model.status,
 
             notes=model.notes,
 
-            # -------------------------
             # Performance Metrics
-            # -------------------------
 
             metrics=PerformanceMetrics(
 
@@ -111,9 +103,8 @@ class EvaluationPersistenceMapper:
                 episode_length=model.episode_length,
             ),
 
-            # -------------------------
+
             # Timestamp
-            # -------------------------
 
             created_at=model.created_at,
         )

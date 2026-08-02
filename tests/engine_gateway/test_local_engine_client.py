@@ -35,9 +35,9 @@ from engine.training.training_engine import TrainingEngine
 from engine.utils.enums import EngineStatus
 
 
-# -------------------------------------------------
+
 # Fixtures
-# -------------------------------------------------
+
 
 @pytest.fixture
 def dummy_configuration():
@@ -111,9 +111,9 @@ def client(engine):
     return LocalEngineClient(engine)
 
 
-# -------------------------------------------------
+
 # Tests
-# -------------------------------------------------
+
 
 def test_initialize(client, engine, dummy_configuration):
 

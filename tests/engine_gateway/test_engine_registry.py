@@ -24,9 +24,9 @@ from backend.training_service.domain.value_objects import (
 )
 
 
-# -------------------------------------------------------
+
 # Fixtures
-# -------------------------------------------------------
+
 
 @pytest.fixture
 def configuration():
@@ -118,9 +118,9 @@ def repositories():
     )
 
 
-# -------------------------------------------------------
+
 # CREATE
-# -------------------------------------------------------
+
 
 @patch(
     "backend.engine_gateway.infrastructure.engine_registry.create_local_engine_event_publisher"
@@ -215,9 +215,9 @@ def test_create_registers_engine(
     )
 
 
-# -------------------------------------------------------
+
 # DUPLICATE CREATE
-# -------------------------------------------------------
+
 
 @patch(
     "backend.engine_gateway.infrastructure.engine_registry.create_local_engine_event_publisher"
@@ -288,9 +288,9 @@ def test_duplicate_create_raises(
         )
 
 
-# -------------------------------------------------------
+
 # GET
-# -------------------------------------------------------
+
 
 def test_get_existing_client():
 
@@ -316,9 +316,9 @@ def test_get_missing_client():
         registry.get(uuid4())
 
 
-# -------------------------------------------------------
+
 # REMOVE
-# -------------------------------------------------------
+
 
 def test_remove():
 
@@ -333,9 +333,9 @@ def test_remove():
     assert registry.exists(run_id) is False
 
 
-# -------------------------------------------------------
+
 # EXISTS
-# -------------------------------------------------------
+
 
 def test_exists():
 
@@ -350,9 +350,9 @@ def test_exists():
     assert registry.exists(uuid4()) is False
 
 
-# -------------------------------------------------------
+
 # RUNNING RUNS
-# -------------------------------------------------------
+
 
 def test_running_training_runs():
 

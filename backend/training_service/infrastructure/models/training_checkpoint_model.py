@@ -30,10 +30,7 @@ class TrainingCheckpointModel(Base):
 
     __tablename__ = "training_checkpoints"
 
-    # ------------------------------------------------------------
     # Identity
-    # ------------------------------------------------------------
-
     id: Mapped[UUID] = mapped_column(primary_key=True)
 
     training_run_id: Mapped[UUID] = mapped_column(
@@ -41,16 +38,11 @@ class TrainingCheckpointModel(Base):
         nullable=False,
     )
 
-    # ------------------------------------------------------------
     # Progress
-    # ------------------------------------------------------------
-
     step: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    # ------------------------------------------------------------
-    # Hyperparameters Snapshot
-    # ------------------------------------------------------------
 
+    # Hyperparameters Snapshot
     learning_rate: Mapped[float] = mapped_column(Float, nullable=False)
 
     total_timesteps: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -75,10 +67,8 @@ class TrainingCheckpointModel(Base):
 
     checkpoint_save_interval: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    # ------------------------------------------------------------
-    # Reward Weights Snapshot
-    # ------------------------------------------------------------
 
+    # Reward Weights Snapshot
     dealer_damage: Mapped[float] = mapped_column(Float, nullable=False)
 
     tank_damage: Mapped[float] = mapped_column(Float, nullable=False)
@@ -101,10 +91,8 @@ class TrainingCheckpointModel(Base):
 
     invalid_action_penalty: Mapped[float] = mapped_column(Float, nullable=False)
 
-    # ------------------------------------------------------------
-    # Curriculum Snapshot
-    # ------------------------------------------------------------
 
+    # Curriculum Snapshot
     boss_hp: Mapped[int] = mapped_column(Integer, nullable=False)
 
     spawn_radius: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -117,10 +105,8 @@ class TrainingCheckpointModel(Base):
 
     grid_size: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    # ------------------------------------------------------------
-    # Metadata
-    # ------------------------------------------------------------
 
+    # Metadata
     checkpoint_type: Mapped[CheckpointType] = mapped_column(
         Enum(CheckpointType),
         nullable=False,

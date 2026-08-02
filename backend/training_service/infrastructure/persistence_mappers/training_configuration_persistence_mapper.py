@@ -28,26 +28,22 @@ class TrainingConfigurationPersistenceMapper:
 
         return TrainingConfigurationModel(
 
-            # -------------------------
+
             # Identity
-            # -------------------------
 
             id=configuration.id,
             family_id=configuration.family_id,
             version=configuration.version,
 
-            # -------------------------
             # Metadata
-            # -------------------------
 
             name=configuration.name,
             algorithm=configuration.algorithm,
             description=configuration.description,
             created_at=configuration.created_at,
 
-            # -------------------------
+
             # HyperParameters
-            # -------------------------
 
             learning_rate=configuration.hyperparameters.learning_rate,
             total_timesteps=configuration.hyperparameters.total_timesteps,
@@ -62,9 +58,8 @@ class TrainingConfigurationPersistenceMapper:
             max_grad_norm=configuration.hyperparameters.max_grad_norm,
             checkpoint_save_interval=configuration.hyperparameters.checkpoint_save_interval,
 
-            # -------------------------
+
             # Reward Weights
-            # -------------------------
 
             dealer_damage=configuration.reward_weights.dealer_damage,
             tank_damage=configuration.reward_weights.tank_damage,
@@ -78,9 +73,8 @@ class TrainingConfigurationPersistenceMapper:
             victory_bonus=configuration.reward_weights.victory_bonus,
             invalid_action_penalty=configuration.reward_weights.invalid_action_penalty,
 
-            # -------------------------
+
             # Curriculum
-            # -------------------------
 
             boss_hp=configuration.curriculum.boss_hp,
             spawn_radius=configuration.curriculum.spawn_radius,
@@ -97,17 +91,15 @@ class TrainingConfigurationPersistenceMapper:
 
         return TrainingConfiguration(
 
-            # -------------------------
+
             # Identity
-            # -------------------------
 
             id=model.id,
             family_id=model.family_id,
             version=model.version,
 
-            # -------------------------
+
             # Metadata
-            # -------------------------
 
             is_training=True,
             name=model.name,
@@ -115,9 +107,8 @@ class TrainingConfigurationPersistenceMapper:
             description=model.description,
             created_at=model.created_at,
 
-            # -------------------------
+
             # HyperParameters
-            # -------------------------
 
             hyperparameters=HyperParameters(
                 learning_rate=model.learning_rate,
@@ -134,9 +125,8 @@ class TrainingConfigurationPersistenceMapper:
                 checkpoint_save_interval=model.checkpoint_save_interval,
             ),
 
-            # -------------------------
+
             # Reward Weights
-            # -------------------------
 
             reward_weights=RewardWeights(
                 dealer_damage=model.dealer_damage,
@@ -152,9 +142,8 @@ class TrainingConfigurationPersistenceMapper:
                 invalid_action_penalty=model.invalid_action_penalty,
             ),
 
-            # -------------------------
+
             # Curriculum
-            # -------------------------
 
             curriculum=CurriculumSettings(
                 boss_hp=model.boss_hp,

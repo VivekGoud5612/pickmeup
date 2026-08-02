@@ -71,9 +71,9 @@ class SQLTrainingConfigurationRepository(
             )
         )
 
-        # -------------------------
+
         # Metadata
-        # -------------------------
+
 
         model.family_id = updated.family_id
         model.version = updated.version
@@ -83,9 +83,9 @@ class SQLTrainingConfigurationRepository(
         model.description = updated.description
         model.created_at = updated.created_at
 
-        # -------------------------
+
         # HyperParameters
-        # -------------------------
+
 
         model.learning_rate = updated.learning_rate
         model.total_timesteps = updated.total_timesteps
@@ -102,9 +102,9 @@ class SQLTrainingConfigurationRepository(
             updated.checkpoint_save_interval
         )
 
-        # -------------------------
+
         # Reward Weights
-        # -------------------------
+
 
         model.dealer_damage = updated.dealer_damage
         model.tank_damage = updated.tank_damage
@@ -122,9 +122,9 @@ class SQLTrainingConfigurationRepository(
             updated.invalid_action_penalty
         )
 
-        # -------------------------
+
         # Curriculum
-        # -------------------------
+
 
         model.boss_hp = updated.boss_hp
         model.spawn_radius = updated.spawn_radius

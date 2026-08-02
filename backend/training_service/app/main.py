@@ -43,10 +43,8 @@ def startup() -> None:
     init_database()
 
 
-# -------------------------
-# Routers
-# -------------------------
 
+#Routers
 app.include_router(training_router)
 app.include_router(checkpoint_router)
 app.include_router(replay_router)

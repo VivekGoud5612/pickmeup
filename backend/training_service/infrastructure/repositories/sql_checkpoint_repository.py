@@ -65,22 +65,21 @@ class SQLCheckpointRepository(CheckpointRepository):
             )
         )
 
-        # ----------------------------------------------------
+
         # Identity
-        # ----------------------------------------------------
 
         model.training_run_id = updated.training_run_id
 
-        # ----------------------------------------------------
+
         # Progress
-        # ----------------------------------------------------
+
 
         model.episode = updated.episode
         model.step = updated.step
 
-        # ----------------------------------------------------
+
         # Hyperparameters
-        # ----------------------------------------------------
+
 
         model.learning_rate = updated.learning_rate
         model.total_timesteps = updated.total_timesteps
@@ -95,9 +94,9 @@ class SQLCheckpointRepository(CheckpointRepository):
         model.max_grad_norm = updated.max_grad_norm
         model.checkpoint_save_interval = updated.checkpoint_save_interval
 
-        # ----------------------------------------------------
+
         # Reward Weights
-        # ----------------------------------------------------
+
 
         model.dealer_damage = updated.dealer_damage
         model.tank_damage = updated.tank_damage
@@ -111,9 +110,9 @@ class SQLCheckpointRepository(CheckpointRepository):
         model.victory_bonus = updated.victory_bonus
         model.invalid_action_penalty = updated.invalid_action_penalty
 
-        # ----------------------------------------------------
+
         # Curriculum
-        # ----------------------------------------------------
+
 
         model.boss_hp = updated.boss_hp
         model.spawn_radius = updated.spawn_radius
@@ -122,9 +121,9 @@ class SQLCheckpointRepository(CheckpointRepository):
         model.reward_scale = updated.reward_scale
         model.grid_size = updated.grid_size
 
-        # ----------------------------------------------------
+
         # Metadata
-        # ----------------------------------------------------
+
 
         model.checkpoint_type = updated.checkpoint_type
         model.file_path = updated.file_path

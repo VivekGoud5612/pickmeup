@@ -22,9 +22,7 @@ def create_local_engine_event_publisher(
 
     publisher = LocalEngineEventPublisher()
 
-    # ---------------------------
-    # Training
-    # ---------------------------
+    #Training
 
     publisher.register_handler(
         TrainingInitializedEvent,
@@ -61,9 +59,7 @@ def create_local_engine_event_publisher(
         TrainingFailedHandler(training_repo),
     )
 
-    # ---------------------------
     # Checkpoint
-    # ---------------------------
 
     publisher.register_handler(
         CheckpointCreatedEvent,
@@ -73,9 +69,7 @@ def create_local_engine_event_publisher(
         ),
     )
 
-    # ---------------------------
     # Curriculum
-    # ---------------------------
 
     publisher.register_handler(
         CurriculumAdvancedEvent,
@@ -85,9 +79,7 @@ def create_local_engine_event_publisher(
         ),
     )
 
-    # ---------------------------
     # Evaluation
-    # ---------------------------
 
     publisher.register_handler(
         EvaluationStartedEvent,

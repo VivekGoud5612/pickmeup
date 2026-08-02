@@ -31,10 +31,8 @@ class EvaluationResultModel(Base):
 
     __tablename__ = "evaluation_results"
 
-    # ------------------------------------------------------------------
-    # Identity
-    # ------------------------------------------------------------------
 
+    #Identity
     id: Mapped[UUID] = mapped_column(
         primary_key=True,
     )
@@ -44,10 +42,7 @@ class EvaluationResultModel(Base):
         nullable=False,
     )
 
-    # ------------------------------------------------------------------
     # Evaluation
-    # ------------------------------------------------------------------
-
     status: Mapped[EvaluationStatus] = mapped_column(
         Enum(EvaluationStatus),
         nullable=False,
@@ -59,10 +54,7 @@ class EvaluationResultModel(Base):
         nullable=False,
     )
 
-    # ------------------------------------------------------------------
     # Performance Metrics
-    # ------------------------------------------------------------------
-
     average_reward: Mapped[float] = mapped_column(
         Float,
         nullable=False,
@@ -98,10 +90,7 @@ class EvaluationResultModel(Base):
         nullable=False,
     )
 
-    # ------------------------------------------------------------------
     # Timestamp
-    # ------------------------------------------------------------------
-
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

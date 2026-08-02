@@ -27,23 +27,20 @@ class TrainingCheckpointPersistenceMapper:
 
         return TrainingCheckpointModel(
 
-            # -------------------------
+
             # Identity
-            # -------------------------
 
             id=checkpoint.id,
 
             training_run_id=checkpoint.training_run_id,
 
-            # -------------------------
+
             # Progress
-            # -------------------------
 
             step=checkpoint.progress.step,
 
-            # -------------------------
+
             # Hyperparameters
-            # -------------------------
 
             learning_rate=checkpoint.hyperparameters.learning_rate,
             total_timesteps=checkpoint.hyperparameters.total_timesteps,
@@ -58,9 +55,8 @@ class TrainingCheckpointPersistenceMapper:
             max_grad_norm=checkpoint.hyperparameters.max_grad_norm,
             checkpoint_save_interval=checkpoint.hyperparameters.checkpoint_save_interval,
 
-            # -------------------------
+
             # Reward Weights
-            # -------------------------
 
             dealer_damage=checkpoint.reward_weights.dealer_damage,
             tank_damage=checkpoint.reward_weights.tank_damage,
@@ -74,9 +70,8 @@ class TrainingCheckpointPersistenceMapper:
             victory_bonus=checkpoint.reward_weights.victory_bonus,
             invalid_action_penalty=checkpoint.reward_weights.invalid_action_penalty,
 
-            # -------------------------
+
             # Curriculum
-            # -------------------------
 
             boss_hp=checkpoint.curriculum_settings.boss_hp,
             spawn_radius=checkpoint.curriculum_settings.spawn_radius,
@@ -85,9 +80,8 @@ class TrainingCheckpointPersistenceMapper:
             reward_scale=checkpoint.curriculum_settings.reward_scale,
             grid_size=checkpoint.curriculum_settings.grid_size,
 
-            # -------------------------
+
             # Metadata
-            # -------------------------
 
             checkpoint_type=checkpoint.checkpoint_type,
 
@@ -107,25 +101,22 @@ class TrainingCheckpointPersistenceMapper:
 
         return TrainingCheckpoint(
 
-            # -------------------------
+
             # Identity
-            # -------------------------
 
             id=model.id,
 
             training_run_id=model.training_run_id,
 
-            # -------------------------
+
             # Progress
-            # -------------------------
 
             progress=TrainingProgress(
                 step=model.step,
             ),
 
-            # -------------------------
+
             # Hyperparameters
-            # -------------------------
 
             hyperparameters=HyperParameters(
                 learning_rate=model.learning_rate,
@@ -142,9 +133,8 @@ class TrainingCheckpointPersistenceMapper:
                 checkpoint_save_interval=model.checkpoint_save_interval,
             ),
 
-            # -------------------------
+
             # Reward Weights
-            # -------------------------
 
             reward_weights=RewardWeights(
                 dealer_damage=model.dealer_damage,
@@ -160,9 +150,8 @@ class TrainingCheckpointPersistenceMapper:
                 invalid_action_penalty=model.invalid_action_penalty,
             ),
 
-            # -------------------------
+
             # Curriculum
-            # -------------------------
 
             curriculum_settings=CurriculumSettings(
                 boss_hp=model.boss_hp,
@@ -173,9 +162,8 @@ class TrainingCheckpointPersistenceMapper:
                 grid_size=model.grid_size,
             ),
 
-            # -------------------------
+
             # Metadata
-            # -------------------------
 
             checkpoint_type=model.checkpoint_type,
 

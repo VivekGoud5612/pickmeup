@@ -29,10 +29,8 @@ class TrainingConfigurationModel(Base):
 
     __tablename__ = "training_configurations"
 
-    # ------------------------------------------------------------------
-    # Identity
-    # ------------------------------------------------------------------
 
+    # Identity
     id: Mapped[UUID] = mapped_column(
         primary_key=True,
     )
@@ -46,10 +44,8 @@ class TrainingConfigurationModel(Base):
         nullable=False,
     )
 
-    # ------------------------------------------------------------------
-    # Metadata
-    # ------------------------------------------------------------------
 
+    # Metadata
     name: Mapped[str] = mapped_column(
         String(100),
         nullable=False,
@@ -71,10 +67,8 @@ class TrainingConfigurationModel(Base):
         nullable=False,
     )
 
-    # ------------------------------------------------------------------
-    # HyperParameters
-    # ------------------------------------------------------------------
 
+    # HyperParameters
     learning_rate: Mapped[float] = mapped_column(
         Float,
         nullable=False,
@@ -135,10 +129,8 @@ class TrainingConfigurationModel(Base):
         nullable=False,
     )
 
-    # ------------------------------------------------------------------
-    # Reward Weights
-    # ------------------------------------------------------------------
 
+    # Reward Weights
     dealer_damage: Mapped[float] = mapped_column(
         Float,
         nullable=False,
@@ -194,10 +186,8 @@ class TrainingConfigurationModel(Base):
         nullable=False,
     )
 
-    # ------------------------------------------------------------------
-    # Curriculum Settings
-    # ------------------------------------------------------------------
 
+    # Curriculum Settings
     boss_hp: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
