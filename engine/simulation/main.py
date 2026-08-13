@@ -25,7 +25,7 @@ def main():
     NUM_ENVS = 8
     NUM_STEPS = 200 
     NUM_AGENTS = 4
-    TOTAL_TIMESTEPS = 100000 ## For now 5000 steps.. let this run perfectly.. lets go to 5000000 - 5 mil.. model saves exactly 16 times..
+    TOTAL_TIMESTEPS = 5000000 ## For now 5000 steps.. let this run perfectly.. lets go to 5000000 - 5 mil.. model saves exactly 16 times..
     BATCH_SIZE = 1024  ## Let this be ...
     PPO_EPOCHS = 4
     INTENT_SIZE = 24

@@ -4,9 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, UTC
 from uuid import UUID
 
-from training_service.domain.enums import TrainingStatus
-
-from training_service.domain.value_objects import (
+from contracts.domain.value_objects import (
     PerformanceMetrics,
     TrainingProgress,
 )
@@ -16,7 +14,7 @@ from pathlib import Path
 
 from engine_gateway.application.dto.nested_requests import PerformanceMetrics
 
-from training_service.domain.enums import CheckpointType
+from .enums import CheckpointType
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)

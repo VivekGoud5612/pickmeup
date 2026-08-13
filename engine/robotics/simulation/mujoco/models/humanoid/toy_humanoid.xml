@@ -1,0 +1,52 @@
+<mujoco>
+    <option timestep = "0.05"/>
+
+    <worldbody>
+        <body name="torso" pos="0 0 1">
+
+            <geom
+                name="torso_geom1"
+                type="box"
+                size="0.25 0.15 0.4"
+                rgba="0.2 0.6 1 1"
+            />
+
+            <body name = "arm" pos = "0.4 0 0">
+                <joint name = "shoulder"
+                    type = "hinge"
+                    axis = "0 1 0" 
+                    pos = "0 0 0"
+                    range = "-90 90"
+                />
+                <!-- Axis along which the shoulder rotates-->
+
+                <geom name = "arm_geom"
+                    type = "box"
+                    size = "0.1 0.1 0.4"
+                    rgba = "0.8 0.3 0.2 1"
+                />
+            </body>
+
+        </body>
+        <geom
+            name = "floor"
+            type = "plane"
+            size = "10 10 0.1"/>
+
+        <body name = "torso_sec" pos = "0 1 1" >
+            <geom 
+                name = "torso_geom"
+                type = "box"
+                size = "0.25 0.15 0.4"
+            />
+        </body>
+    </worldbody>
+
+    <actuator>
+        <position
+            name = "shoulder_motor"
+            joint = "shoulder"
+            kp = "20"
+        />
+    </actuator>
+</mujoco>

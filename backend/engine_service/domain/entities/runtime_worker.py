@@ -8,6 +8,7 @@ from engine.utils.enums import (
     EngineStatus,
 )
 from domain.value_objects import CheckpointMetaData
+from engine.utils.enums import EngineStatus
 
 
 @dataclass(slots = True, kw_only = True)
@@ -22,6 +23,8 @@ class RuntimeWorker:
     finished_at : datetime | None = None 
 
     latest_checkpoint : CheckpointMetaData | None   ## A run time state , but useful when checked for status
+
+    execution_handle : ExecutionHandle | None   ## So that we can add this in infra, domain doesn't import from infra...
 
     def start(self) -> None:
         if self.status != EngineStatus.CREATED:

@@ -33,13 +33,4 @@ class EvaluationStatus(Enum):
     FAILED = auto()  ## But what does ti mean to evaluate a checkpoint ??  Suppose we after saving checkpoints, try to evaluate them to see which are better at which weights.. So these would act as choices for the conditions then
 
 
-class CheckpointType(Enum):
-    """
-    Useful later, when we want to specify how we save checkpoints.
-    It could be manual, periodic or best model save. These are 
-    sort of choices or like flags to indicate that
-    """
-    MANUAL = auto()
-    PERIODIC = auto()
-    BEST_MODEL = auto() 
 
