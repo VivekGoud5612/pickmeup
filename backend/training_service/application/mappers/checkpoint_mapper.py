@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from training_service.domain.entities.training_checkpoint import (
+from backend.training_service.domain.entities.checkpoint import (
     TrainingCheckpoint,
 )
 
-from training_service.application.dto.checkpoint.responses import (
+from backend.training_service.application.dto.checkpoint.responses import (
     CheckpointSummaryResponse,
     CheckpointCreatedResponse,
     CheckpointDeletedResponse,
@@ -26,8 +26,8 @@ class CheckpointMapper:
             training_run_id=checkpoint.training_run_id,
             progress=checkpoint.progress,
             checkpoint_type=checkpoint.checkpoint_type,
-            created_at=checkpoint.created_at,
             is_best=checkpoint.is_best,
+            created_at=checkpoint.created_at,
         )
 
     @staticmethod

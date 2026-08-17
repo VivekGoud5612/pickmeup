@@ -1,9 +1,9 @@
 from __future__ import annotations 
 
-from abc import ABC 
+from abc import ABC, abstractmethod
 from uuid import UUID 
 
-from training_services.domain.entities.checkpoint import TrainingCheckpoint 
+from backend.training_service.domain.entities.checkpoint import TrainingCheckpoint
 
 class CheckpointRepository(ABC):
     """

@@ -1,24 +1,17 @@
 from __future__ import annotations
 
-from engine_gateway.application.events.evaluation_events import (
-    EvaluationStartedEvent, EvaluationCompletedEvent,
+from backend.contracts.engine.events.evaluation_events import (
+    EvaluationCompletedEvent,
+    EvaluationStartedEvent,
 )
-from training_service.application.handlers.base import EngineEventHandler 
+from backend.training_service.application.handlers.base import EngineEventHandler
 
 
 class EvaluationStartedHandler(EngineEventHandler):
-
-    def handle(
-        self,
-        event: EvaluationStartedEvent,
-    ) -> None:
-        ...
+    def handle(self, event: EvaluationStartedEvent) -> None:
+        raise NotImplementedError
 
 
 class EvaluationCompletedHandler(EngineEventHandler):
-
-    def handle(
-        self,
-        event: EvaluationCompletedEvent,
-    ) -> None:
-        ...
+    def handle(self, event: EvaluationCompletedEvent) -> None:
+        raise NotImplementedError

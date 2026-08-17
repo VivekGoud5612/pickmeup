@@ -1,90 +1,64 @@
-from __future__ import annotations 
+from __future__ import annotations
 
-from abc import ABC, abstractmethod 
+from abc import ABC, abstractmethod
+from uuid import UUID
 
-from training_service.application.dto.engine.requests import (
-    StartEngineTrainingRequest,
+from backend.contracts.engine.dto.requests import (
+    DeleteEngineCheckpointRequest,
+    EvaluateEngineCheckpointRequest,
+    LoadEngineCheckpointRequest,
     PauseEngineTrainingRequest,
     ResumeEngineTrainingRequest,
-    StopEngineTrainingRequest,
-    EvaluateEngineCheckpointRequest,
     SaveEngineCheckpointRequest,
+    StartEngineTrainingRequest,
+    StopEngineTrainingRequest,
 )
-
-from training_service.application.dto.engine.responses import (
-    EngineTrainingStartedResponse,
-    EngineStatusResponse,
-    EngineMetricsResponse,
+from backend.contracts.engine.dto.responses import (
     EngineCheckpointEvaluationResponse,
     EngineCheckpointSavedResponse,
+    EngineMetricsResponse,
+    EngineStatusResponse,
+    EngineTrainingStartedResponse,
 )
 
 
 class EngineClient(ABC):
     """
-    Contract describing communication between
-    training backend and engine
+    Contract describing communication between the training backend and engine.
     """
 
-        @abstractmethod
-    def start(
-        self,
-        request: StartEngineTrainingRequest,
-    ) -> EngineTrainingStartedResponse:
+    @abstractmethod
+    def start(self, request: StartEngineTrainingRequest) -> EngineTrainingStartedResponse:
         raise NotImplementedError
 
     @abstractmethod
-    def pause(
-        self,
-        request: PauseEngineTrainingRequest,
-    ) -> EngineStatusResponse:
+    def pause(self, request: PauseEngineTrainingRequest) -> EngineStatusResponse:
         raise NotImplementedError
 
     @abstractmethod
-    def resume(
-        self,
-        request: ResumeEngineTrainingRequest,
-    ) -> EngineStatusResponse:
+    def resume(self, request: ResumeEngineTrainingRequest) -> EngineStatusResponse:
         raise NotImplementedError
 
     @abstractmethod
-    def stop(
-        self,
-        request: StopEngineTrainingRequest,
-    ) -> EngineStatusResponse:
+    def stop(self, request: StopEngineTrainingRequest) -> EngineStatusResponse:
         raise NotImplementedError
 
     @abstractmethod
-    def save_checkpoint(
-        self,
-        request: SaveEngineCheckpointRequest,
-    ) -> EngineCheckpointSavedResponse:
+    def save_checkpoint(self, request: SaveEngineCheckpointRequest) -> EngineCheckpointSavedResponse:
         raise NotImplementedError
 
     @abstractmethod
-    def load_checkpoint(
-        self,
-        request : LocdEngineCheckpointRequest
-    ) -> None:
+    def load_checkpoint(self, request: LoadEngineCheckpointRequest) -> None:
         raise NotImplementedError
 
     @abstractmethod
-    def delete_checkpoint(
-        self,
-        request : DeleteEngineCheckpointRequest,
-    ) -> None:
+    def delete_checkpoint(self, request: DeleteEngineCheckpointRequest) -> None:
         raise NotImplementedError
 
     @abstractmethod
-    def evaluate_checkpoint(
-        self,
-        request : EvaluateEngineCheckpointRequest,
-    ) -> EngineCheckpointEvaluationResponse:
+    def evaluate_checkpoint(self, request: EvaluateEngineCheckpointRequest) -> EngineCheckpointEvaluationResponse:
         raise NotImplementedError
 
     @abstractmethod
-    def get_metrics(
-        self,
-        training_run_id,
-    ) -> EngineMetricsResponse:
+    def get_metrics(self, training_run_id: UUID) -> EngineMetricsResponse:
         raise NotImplementedError

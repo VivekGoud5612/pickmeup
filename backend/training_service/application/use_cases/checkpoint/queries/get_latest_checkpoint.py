@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from training_service.application.dto.checkpoint.requests import (
+from backend.training_service.application.dto.checkpoint.requests import (
     GetLatestCheckpointRequest,
 )
-from training_service.application.dto.checkpoint.responses import (
+from backend.training_service.application.dto.checkpoint.responses import (
     CheckpointSummaryResponse,
 )
-from training_service.application.repositories.checkpoint_repository import (
+from backend.training_service.application.repositories.checkpoint_repository import (
     CheckpointRepository,
 )
-from training_service.application.mappers.checkpoint_mapper import (
+from backend.training_service.application.mappers.checkpoint_mapper import (
     CheckpointMapper,
 )
 
@@ -29,9 +29,8 @@ class GetLatestCheckpointUseCase:
         request: GetLatestCheckpointRequest,
     ) -> CheckpointSummaryResponse:
 
-        checkpoint = self._checkpoint_repo.get_latest(
+        checkpoint = self._checkpoint_repo.get_latest_for_run(
             request.training_run_id
         )
 
         return CheckpointMapper.to_summary(checkpoint)
-   

@@ -1,70 +1,47 @@
-from __future__ import annotations 
+from __future__ import annotations
 
-from engine_gateway.application.events.training_events import (
-    TrainingInitializedEvent, TrainingStartedEvent, TrainingPausedEvent, TrainingResumedEvent, TrainingStoppedEvent, TrainingCompletedEvent, TrainingFailedEvent
+from backend.contracts.engine.events.training_events import (
+    TrainingCompletedEvent,
+    TrainingFailedEvent,
+    TrainingInitializedEvent,
+    TrainingPausedEvent,
+    TrainingResumedEvent,
+    TrainingStartedEvent,
+    TrainingStoppedEvent,
 )
-
-from training_service.application.handlers.base import EngineEventHandler 
+from backend.training_service.application.handlers.base import EngineEventHandler
 
 
 class TrainingInitializedHandler(EngineEventHandler):
-
-    def handle(
-        self,
-        event: TrainingInitializedEvent,
-    ) -> None:
-        ...
+    def handle(self, event: TrainingInitializedEvent) -> None:
+        raise NotImplementedError
 
 
 class TrainingStartedHandler(EngineEventHandler):
-
-    def handle(
-        self,
-        event: TrainingStartedEvent,
-    ) -> None:
-        ...
+    def handle(self, event: TrainingStartedEvent) -> None:
+        raise NotImplementedError
 
 
 class TrainingPausedHandler(EngineEventHandler):
-
-    def handle(
-        self,
-        event: TrainingPausedEvent,
-    ) -> None:
-        ...
+    def handle(self, event: TrainingPausedEvent) -> None:
+        raise NotImplementedError
 
 
 class TrainingResumedHandler(EngineEventHandler):
-
-    def handle(
-        self,
-        event: TrainingResumedEvent,
-    ) -> None:
-        ...
+    def handle(self, event: TrainingResumedEvent) -> None:
+        raise NotImplementedError
 
 
 class TrainingStoppedHandler(EngineEventHandler):
-
-    def handle(
-        self,
-        event: TrainingStoppedEvent,
-    ) -> None:
-        ...
+    def handle(self, event: TrainingStoppedEvent) -> None:
+        raise NotImplementedError
 
 
 class TrainingCompletedHandler(EngineEventHandler):
-
-    def handle(
-        self,
-        event: TrainingCompletedEvent,
-    ) -> None:
-        ...
+    def handle(self, event: TrainingCompletedEvent) -> None:
+        raise NotImplementedError
 
 
 class TrainingFailedHandler(EngineEventHandler):
-
-    def handle(
-        self,
-        event: TrainingFailedEvent,
-    ) -> None:
-        ...
+    def handle(self, event: TrainingFailedEvent) -> None:
+        raise NotImplementedError

@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from training_service.application.dto.checkpoint.requests import (
+from backend.training_service.application.dto.checkpoint.requests import (
     ListCheckpointsRequest,
 )
-from training_service.application.dto.checkpoint.responses import (
+from backend.training_service.application.dto.checkpoint.responses import (
     ListCheckpointsResponse,
 )
-from training_service.application.repositories.checkpoint_repository import (
+from backend.training_service.application.repositories.checkpoint_repository import (
     CheckpointRepository,
 )
-from training_service.application.mappers.checkpoint_mapper import (
+from backend.training_service.application.mappers.checkpoint_mapper import (
     CheckpointMapper,
 )
 
@@ -29,7 +29,7 @@ class ListCheckpointsUseCase:
         request: ListCheckpointsRequest,
     ) -> ListCheckpointsResponse:
 
-        checkpoints = self._checkpoint_repo.list_all(
+        checkpoints = self._checkpoint_repo.list_by_run(
             request.training_run_id
         )
 

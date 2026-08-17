@@ -1,36 +1,37 @@
 from __future__ import annotations
-from dataclasses import dataclass 
-
-from training_service.domain.entities.checkpoint import (
+from backend.training_service.domain.entities.checkpoint import (
     TrainingCheckpoint,
 )
 
-from training_service.application.repositories.checkpoint_repository import (
+from backend.training_service.application.repositories.checkpoint_repository import (
     CheckpointRepository,
 )
 
-from training_service.application.repositories.training_repository import (
+from backend.training_service.application.repositories.training_repository import (
     TrainingRunRepository,
 )
+from backend.training_service.application.repositories.training_configuration_repository import (
+    TrainingConfigurationRepository,
+)
 
-from training_service.application.dto.checkpoint.requests import (
+from backend.training_service.application.dto.checkpoint.requests import (
     SaveCheckpointRequest,
 )
 
-from training_service.application.dto.checkpoint.responses import (
-    CheckpointCreatedResponse, CheckpointSummaryResponse,
+from backend.training_service.application.dto.checkpoint.responses import (
+    CheckpointCreatedResponse,
 )
-from training_service.application.mappers.checkpoint_mapper import (
+from backend.training_service.application.mappers.checkpoint_mapper import (
     CheckpointMapper,
 )
-from engine_gateway.infrastructure.engine_registry import (
+from backend.engine_gateway.infrastructure.engine_registry import (
     EngineRegistry,
 )
-from engine_gateway.application.dto.requests import (
-    EngineCheckpointRequest,
+from backend.contracts.engine.dto.requests import (
+    SaveEngineCheckpointRequest,
 )
-from engine_gateway.application.dto.responses import (
-    EngineCheckpointResponse,
+from backend.contracts.engine.dto.responses import (
+    EngineCheckpointSavedResponse,
 )
 
 
@@ -40,12 +41,15 @@ class SaveCheckpointUseCase:
     def __init__(
         self,
         checkpoint_repo: CheckpointRepository,
-        training_repo: TrainingRepository,
-
+        training_repo: TrainingRunRepository,
+        training_config_repo: TrainingConfigurationRepository,
+        engine_registry: EngineRegistry,
     ):
 
         self._checkpoint_repo = checkpoint_repo
         self._training_repo = training_repo
+        self._training_config_repo = training_config_repo
+        self._engine_registry = engine_registry
 
     def execute(
         self,
@@ -53,15 +57,16 @@ class SaveCheckpointUseCase:
         ) -> CheckpointCreatedResponse:
 
         training_run = self._training_repo.get_by_id(request.training_run_id)
+        configuration = self._training_config_repo.get_by_id(training_run.configuration_id)
 
         engine_client = self._engine_registry.get(request.training_run_id)
-        engine_request = EngineCheckpointRequest(
-            checkpoint_name = request.checkpoint_name,
-        )
+        engine_request = SaveEngineCheckpointRequest()
 
         engine_response = engine_client.save_checkpoint(engine_request)
 
-        checkpoint = self._create_checkpoint(request, training_run, engine_response)
+        checkpoint = self._create_checkpoint(
+            request, training_run, configuration, engine_response
+        )
 
         self._checkpoint_repo.save(checkpoint)
 
@@ -76,15 +81,17 @@ class SaveCheckpointUseCase:
         self,
         request: SaveCheckpointRequest,
         training_run : TrainingRun,
-        engine_response : EngineCheckpointResponse,
+        configuration,
+        engine_response: EngineCheckpointSavedResponse,
     ) -> TrainingCheckpoint:
 
         return TrainingCheckpoint(
             training_run_id=training_run.id,
-            configuration_id=training_run.configuration_id,
             progress=training_run.progress,
-            checkpoint_type = engine_response.checkpoint_type,
+            checkpoint_type=engine_response.checkpoint_type,
             file_path=engine_response.checkpoint_path,
-            notes=request.notes,
-            created_at = engine_response.created_at,
+            hyperparameters=configuration.hyperparameters,
+            reward_weights=configuration.reward_weights,
+            curriculum_settings=configuration.curriculum,
+            created_at=engine_response.created_at,
         )

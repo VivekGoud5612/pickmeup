@@ -2,6 +2,8 @@ from __future__ import annotations
 from dataclasses import dataclass 
 from uuid import UUID 
 
+from backend.contracts.engine.models.performance_metrics import PerformanceMetrics
+
 
 @dataclass(slots=True, frozen=True, kw_only=True)
 class StartEvaluationRequest:
@@ -17,6 +19,7 @@ class StartEvaluationRequest:
 class CompleteEvaluationRequest:
 
     evaluation_id: UUID
+    metrics: PerformanceMetrics
 
 @dataclass(slots=True, frozen=True, kw_only=True)
 class FailEvaluationRequest:
@@ -35,5 +38,4 @@ class ListEvaluationsRequest:
 
 @dataclass(slots = True, frozen = True, kw_only = True)
 class DeleteEvaluationRequest:
-
-    evaluation_id : UUID 
+    evaluation_id: UUID

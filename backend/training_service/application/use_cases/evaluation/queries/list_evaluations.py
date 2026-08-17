@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from training_service.application.dto.evaluation.requests import (
+from backend.training_service.application.dto.evaluation.requests import (
     ListEvaluationsRequest,
 )
-from training_service.application.dto.evaluation.responses import (
+from backend.training_service.application.dto.evaluation.responses import (
     ListEvaluationsResponse,
 )
-from training_service.application.repositories.evaluation_repository import (
+from backend.training_service.application.repositories.evaluation_repository import (
     EvaluationRepository,
 )
-from training_service.application.mappers.evaluation_mapper import (
+from backend.training_service.application.mappers.evaluation_mapper import (
     EvaluationMapper,
 )
 
@@ -29,7 +29,7 @@ class ListEvaluationsUseCase:
         request: ListEvaluationsRequest,
     ) -> ListEvaluationsResponse:
 
-        evaluations = self._evaluation_repo.list_all(
+        evaluations = self._evaluation_repo.list_by_checkpoint(
             request.checkpoint_id
         )
 

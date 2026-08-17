@@ -3,10 +3,10 @@ Configuration gets its own repo
 """
 
 from __future__ import annotations 
-from abc import ABC 
+from abc import ABC, abstractmethod
 from uuid import UUID 
 
-from training_service.domain.entities.training_config import TrainingConfiguration
+from backend.training_service.domain.entities.training_config import TrainingConfiguration
 
 class TrainingConfigurationRepository(ABC):
 

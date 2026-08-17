@@ -1,15 +1,9 @@
-from __future__ import annotations 
+from __future__ import annotations
 
-from training_service.application.handlers.base import EngineEventHandler 
-from engine_gateway.application.events.checkpoint_events import (
-    CheckpointCreatedEvent,
-)
+from backend.contracts.engine.events.checkpoint_events import CheckpointCreatedEvent
+from backend.training_service.application.handlers.base import EngineEventHandler
 
 
 class CheckpointCreatedHandler(EngineEventHandler):
-
-    def handle(
-        self,
-        event: CheckpointCreatedEvent,
-    ) -> None:
-        ...
+    def handle(self, event: CheckpointCreatedEvent) -> None:
+        raise NotImplementedError
